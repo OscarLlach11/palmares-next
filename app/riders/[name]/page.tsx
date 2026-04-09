@@ -35,14 +35,16 @@ async function getRiderData(rawName: string) {
     .limit(50)
 
   // Get race history from race_results top10
-  const { data: results } = await supabase
-    .from('race_results')
-    .select('slug, year, top10')
-    .contains('top10', JSON.stringify([name]))
-    .order('year', { ascending: false })
-    .limit(50)
-    .throwOnError()
-    .catch(() => ({ data: [] }))
+  let results: { slug: string; year: number; top10: string[] }[] = []
+  try {
+    const { data } = await supabase
+      .from('race_results')
+      .select('slug, year, top10')
+      .contains('top10', JSON.stringify([name]))
+      .order('year', { ascending: false })
+      .limit(50)
+    results = data || []
+  } catch { results = [] }
 
   // Get race names
   const slugs = [...new Set([...(wins || []).map(w => w.race_slug), ...(results || []).map(r => r.slug)])]
