@@ -40,7 +40,7 @@ async function getMembers() {
 
     return sorted.map(m => ({
       ...m,
-      ridersWithImages: (m.fav_riders || []).map(getRiderName).filter(Boolean).map(name => ({
+      ridersWithImages: (m.fav_riders || []).map(getRiderName).filter(Boolean).map((name: string) => ({
         name,
         image_url: riderImgMap[name.toLowerCase()] || null,
       }))
