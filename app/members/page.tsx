@@ -1,87 +1,66 @@
-import { supabase, type Race } from '@/lib/supabase'
-import RaceGrid from './components/RaceGrid'
-import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
+import MembersClient from '../components/MembersClient'
 
-// Revalidate every 10 minutes
-export const revalidate = 600
+export const revalidate = 300
 
-async function getRaces(): Promise<Race[]> {
-  const { data, error } = await supabase
-    .from('races')
-    .select('slug, race_name, race_type, first_year, last_year, tv_year, tier, country, flag, distance, gradient, swatch, description, subgenres, stage_count, logo_url')
-    .order('race_name')
-  if (error) { console.error('getRaces error:', error); return [] }
-  return data || []
-}
-
-async function getStats(): Promise<{ raceCount: number; logCount: number; ratingCount: number }> {
-  const [racesRes, logsRes] = await Promise.all([
-    supabase.from('races').select('slug', { count: 'exact', head: true }),
-    supabase.from('race_logs').select('id, rating', { count: 'exact' }),
+async function getMembers() {
+  const [{ data: profiles }, { data: followCounts }] = await Promise.all([
+    supabase.from('profiles').select('user_id, display_name, handle, avatar_url, fav_riders').not('display_name', 'is', null).limit(20),
+    supabase.from('follows').select('following_id').limit(5000),
   ])
-  const raceCount = racesRes.count || 0
-  const logCount = logsRes.count || 0
-  const ratingCount = (logsRes.data || []).filter(l => l.rating && l.rating > 0).length
-  return { raceCount, logCount, ratingCount }
+
+  if (!profiles?.length) return []
+
+  const counts: Record<string, number> = {}
+  ;(followCounts || []).forEach(r => { counts[r.following_id] = (counts[r.following_id] || 0) + 1 })
+
+  const sorted = profiles
+    .map(p => ({ ...p, followerCount: counts[p.user_id] || 0 }))
+    .sort((a, b) => b.followerCount - a.followerCount)
+    .slice(0, 5)
+
+  // Fetch rider images for all fav_riders in one batch
+  const getRiderName = (r: unknown): string => (r && typeof r === 'object' && 'name' in r) ? String((r as {name: string}).name) : String(r || '')
+  const allRiderNames = [...new Set(sorted.flatMap(m => (m.fav_riders || []).map(getRiderName).filter(Boolean)))]
+
+  if (allRiderNames.length) {
+    const { data: batchRows } = await supabase
+      .from('startlists')
+      .select('rider_name, image_url, year')
+      .in('rider_name', allRiderNames)
+      .order('year', { ascending: false })
+      .limit(500)
+
+    const riderImgMap: Record<string, string> = {}
+    ;(batchRows || []).forEach(r => {
+      if (r.image_url && r.image_url !== 'none') {
+        riderImgMap[r.rider_name.toLowerCase()] = r.image_url
+      }
+    })
+
+    return sorted.map(m => ({
+      ...m,
+      ridersWithImages: (m.fav_riders || []).map(getRiderName).filter(Boolean).map(name => ({
+        name,
+        image_url: riderImgMap[name.toLowerCase()] || null,
+      }))
+    }))
+  }
+
+  return sorted.map(m => ({ ...m, ridersWithImages: [] }))
 }
 
-const SG_LABELS: Record<string, string> = {
-  cobbled: 'Cobbled', gravel: 'Gravel', mountain: 'Mountain', sprint: 'Sprinters',
-  classics: 'Classics', ardennes: 'Ardennes', monument: 'Monument', gc: 'Grand Tour',
-  'stage-race': 'Stage Race', tt: 'Time Trial',
-}
-const SG_CLASS: Record<string, string> = {
-  cobbled: 'sg-cobbled', gravel: 'sg-gravel', mountain: 'sg-mountain', sprint: 'sg-sprint',
-  classics: 'sg-classics', ardennes: 'sg-ardennes', monument: 'sg-classics', gc: 'sg-stage',
-  'stage-race': 'sg-stage', tt: 'sg-tt',
-}
-
-export default async function DiscoverPage() {
-  const [races, stats] = await Promise.all([getRaces(), getStats()])
-
-  const grandTours = races.filter(r => r.race_type === 'Grand Tour')
-  const monuments = races.filter(r => r.race_type === 'Monument')
-  const classics = races.filter(r => r.race_type === 'Classic')
-  const stageRaces = races.filter(r => r.race_type === 'Stage Race')
-  const oneDay = races.filter(r => r.race_type === 'One Day')
-  const championships = races.filter(r => r.race_type === 'championship')
+export default async function MembersPage() {
+  const members = await getMembers()
 
   return (
     <>
-      {/* HERO */}
-      <div className="hero">
-        <div className="hero-bg">VÉLO</div>
-        <div className="eyebrow">— The Cycling Race Diary</div>
-        <h1>Every <em>édition.</em> Logged.</h1>
-        <p className="hero-sub">Rate stage by stage. Track every breakaway since 1980.</p>
-        <div className="hstats">
-          <div>
-            <div className="hstat-n">{stats.logCount.toLocaleString()}</div>
-            <div className="hstat-l">Races Logged</div>
-          </div>
-          <div>
-            <div className="hstat-n">{stats.ratingCount.toLocaleString()}</div>
-            <div className="hstat-l">Ratings Given</div>
-          </div>
-          <div>
-            <div className="hstat-n">{stats.raceCount}</div>
-            <div className="hstat-l">Races in DB</div>
-          </div>
-        </div>
+      <div className="hero" style={{ paddingBottom: 32 }}>
+        <div className="hero-bg">PELOTON</div>
+        <div className="eyebrow">— The Community</div>
+        <h1>Find <em>fellow</em> fans.</h1>
       </div>
-
-      {/* RACE GRID — client component for interactivity */}
-      <RaceGrid
-        races={races}
-        grandTours={grandTours}
-        monuments={monuments}
-        classics={classics}
-        stageRaces={stageRaces}
-        oneDay={oneDay}
-        championships={championships}
-        sgLabels={SG_LABELS}
-        sgClass={SG_CLASS}
-      />
+      <MembersClient initialMembers={members} />
     </>
   )
 }
