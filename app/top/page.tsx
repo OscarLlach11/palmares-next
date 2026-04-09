@@ -1,87 +1,72 @@
-import { supabase, type Race } from '@/lib/supabase'
-import RaceGrid from './components/RaceGrid'
+import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 
-// Revalidate every 10 minutes
 export const revalidate = 600
 
-async function getRaces(): Promise<Race[]> {
-  const { data, error } = await supabase
+async function getLeaderboard() {
+  const { data: logs } = await supabase
+    .from('race_logs')
+    .select('slug, rating')
+    .not('rating', 'is', null)
+    .gt('rating', 0)
+
+  const { data: races } = await supabase
     .from('races')
-    .select('slug, race_name, race_type, first_year, last_year, tv_year, tier, country, flag, distance, gradient, swatch, description, subgenres, stage_count, logo_url')
-    .order('race_name')
-  if (error) { console.error('getRaces error:', error); return [] }
-  return data || []
+    .select('slug, race_name, race_type, country, flag, gradient, swatch')
+
+  if (!logs || !races) return []
+
+  const raceMap = Object.fromEntries(races.map(r => [r.slug, r]))
+  const stats: Record<string, { total: number; count: number }> = {}
+
+  for (const log of logs) {
+    if (!stats[log.slug]) stats[log.slug] = { total: 0, count: 0 }
+    stats[log.slug].total += log.rating
+    stats[log.slug].count++
+  }
+
+  return Object.entries(stats)
+    .filter(([, s]) => s.count >= 2)
+    .map(([slug, s]) => ({
+      slug,
+      race: raceMap[slug],
+      avg: s.total / s.count,
+      count: s.count,
+    }))
+    .filter(e => e.race)
+    .sort((a, b) => b.avg - a.avg || b.count - a.count)
+    .slice(0, 50)
 }
 
-async function getStats(): Promise<{ raceCount: number; logCount: number; ratingCount: number }> {
-  const [racesRes, logsRes] = await Promise.all([
-    supabase.from('races').select('slug', { count: 'exact', head: true }),
-    supabase.from('race_logs').select('id, rating', { count: 'exact' }),
-  ])
-  const raceCount = racesRes.count || 0
-  const logCount = logsRes.count || 0
-  const ratingCount = (logsRes.data || []).filter(l => l.rating && l.rating > 0).length
-  return { raceCount, logCount, ratingCount }
-}
-
-const SG_LABELS: Record<string, string> = {
-  cobbled: 'Cobbled', gravel: 'Gravel', mountain: 'Mountain', sprint: 'Sprinters',
-  classics: 'Classics', ardennes: 'Ardennes', monument: 'Monument', gc: 'Grand Tour',
-  'stage-race': 'Stage Race', tt: 'Time Trial',
-}
-const SG_CLASS: Record<string, string> = {
-  cobbled: 'sg-cobbled', gravel: 'sg-gravel', mountain: 'sg-mountain', sprint: 'sg-sprint',
-  classics: 'sg-classics', ardennes: 'sg-ardennes', monument: 'sg-classics', gc: 'sg-stage',
-  'stage-race': 'sg-stage', tt: 'sg-tt',
-}
-
-export default async function DiscoverPage() {
-  const [races, stats] = await Promise.all([getRaces(), getStats()])
-
-  const grandTours = races.filter(r => r.race_type === 'Grand Tour')
-  const monuments = races.filter(r => r.race_type === 'Monument')
-  const classics = races.filter(r => r.race_type === 'Classic')
-  const stageRaces = races.filter(r => r.race_type === 'Stage Race')
-  const oneDay = races.filter(r => r.race_type === 'One Day')
-  const championships = races.filter(r => r.race_type === 'championship')
+export default async function TopPage() {
+  const leaderboard = await getLeaderboard()
 
   return (
     <>
-      {/* HERO */}
-      <div className="hero">
-        <div className="hero-bg">VÉLO</div>
-        <div className="eyebrow">— The Cycling Race Diary</div>
-        <h1>Every <em>édition.</em> Logged.</h1>
-        <p className="hero-sub">Rate stage by stage. Track every breakaway since 1980.</p>
-        <div className="hstats">
-          <div>
-            <div className="hstat-n">{stats.logCount.toLocaleString()}</div>
-            <div className="hstat-l">Races Logged</div>
-          </div>
-          <div>
-            <div className="hstat-n">{stats.ratingCount.toLocaleString()}</div>
-            <div className="hstat-l">Ratings Given</div>
-          </div>
-          <div>
-            <div className="hstat-n">{stats.raceCount}</div>
-            <div className="hstat-l">Races in DB</div>
-          </div>
-        </div>
+      <div className="hero" style={{ paddingBottom: 32 }}>
+        <div className="hero-bg">TOP</div>
+        <div className="eyebrow">— Community Rankings</div>
+        <h1>Greatest <em>races</em> ever.</h1>
       </div>
-
-      {/* RACE GRID — client component for interactivity */}
-      <RaceGrid
-        races={races}
-        grandTours={grandTours}
-        monuments={monuments}
-        classics={classics}
-        stageRaces={stageRaces}
-        oneDay={oneDay}
-        championships={championships}
-        sgLabels={SG_LABELS}
-        sgClass={SG_CLASS}
-      />
+      <div style={{ padding: '24px 40px 12px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 3 }}>
+        Rankings
+      </div>
+      <div>
+        {leaderboard.map((entry, i) => (
+          <Link key={entry.slug} href={`/races/${entry.slug}`} className="lbi" style={{ textDecoration: 'none' }}>
+            <div className={`lbrank${i < 3 ? ' pod' : ''}`}>{i + 1}</div>
+            <div style={{ width: 5, height: 40, background: entry.race.gradient || '#333', flexShrink: 0 }} />
+            <div className="lbinfo">
+              <div className="lbname">{entry.race.race_name}</div>
+              <div className="lbsub">{entry.race.flag} {entry.race.country} · {entry.race.race_type}</div>
+            </div>
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              <div className="lbsc">{entry.avg.toFixed(1)}</div>
+              <div className="lbsc-s">{entry.count} ratings</div>
+            </div>
+          </Link>
+        ))}
+      </div>
     </>
   )
 }
