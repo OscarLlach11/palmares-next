@@ -41,6 +41,24 @@ export default function ReviewLikes({ reviewKey, isOwnReview }: Props) {
       setLiked(true)
       setCount(c => c + 1)
       await supabase.from('review_likes').upsert({ review_key: reviewKey, user_id: user.id })
+      // Fire notification to review owner
+      // reviewKey format: handle/slug/year/n
+      const [handle] = reviewKey.split('/')
+      const { data: ownerProf } = await supabase
+        .from('profiles').select('user_id').eq('handle', handle).maybeSingle()
+      if (ownerProf?.user_id && ownerProf.user_id !== user.id) {
+        const { data: myProf } = await supabase
+          .from('profiles').select('display_name,handle').eq('user_id', user.id).maybeSingle()
+        supabase.from('notifications').insert({
+          user_id: ownerProf.user_id,
+          type: 'like',
+          actor_id: user.id,
+          actor_handle: myProf?.handle || '',
+          actor_name: myProf?.display_name || 'Someone',
+          review_key: reviewKey,
+          read: false,
+        }).then(() => {})
+      }
     }
   }
 
