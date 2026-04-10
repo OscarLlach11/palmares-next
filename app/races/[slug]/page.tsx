@@ -57,6 +57,10 @@ export default async function RacePage({ params }: { params: { slug: string } })
     'stage-race': 'sg-stage', tt: 'sg-tt',
   }
 
+  const fallbackDescription = race.race_type
+    ? `${race.race_name} is a ${race.race_type.toLowerCase()} held in ${race.country}.`
+    : `${race.race_name} is a race held in ${race.country}.`
+
   return (
     <div className="race-sub-layout">
       <div className="rsp-main">
@@ -121,7 +125,7 @@ export default async function RacePage({ params }: { params: { slug: string } })
       <div className="rsp-sidebar">
         <div className="rsp-st">About</div>
         <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.8 }}>
-          {race.description || `${race.race_name} is a ${race.race_type.toLowerCase()} held in ${race.country}.`}
+          {race.description || fallbackDescription}
         </p>
         {years.length > 0 && (
           <div style={{ marginTop: 24 }}>
