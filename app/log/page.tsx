@@ -215,8 +215,8 @@ export default function LogPage() {
               </div>
               {l.rating && (
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: 'var(--gold)' }}>{l.rating}</div>
-                  <div style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 1 }}>/ 10</div>
+                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: 'var(--gold)' }}>{l.rating.toFixed(1)}</div>
+                  <div style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 1 }}>/ 5.0</div>
                 </div>
               )}
             </Link>
