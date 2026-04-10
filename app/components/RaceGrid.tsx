@@ -171,7 +171,9 @@ function RaceCard({ race, sgLabels, sgClass, onLog }: {
         <div className="rc-name">{race.race_name}</div>
         <div className="rc-yr">Est. {race.first_year}</div>
         {rating > 0 && (
-          <div style={{ fontSize: 11, color: 'var(--gold)', marginBottom: 4 }}>{'★'.repeat(Math.floor(rating / 2))}{rating % 2 ? '½' : ''} {rating}</div>
+          <div style={{ fontSize: 11, color: 'var(--gold)', marginBottom: 4 }}>
+            {'★'.repeat(Math.floor(rating))}{rating % 1 ? '½' : ''} {rating.toFixed(1)}
+          </div>
         )}
         {race.subgenres && race.subgenres.length > 0 && (
           <div style={{ marginBottom: 6 }}>
