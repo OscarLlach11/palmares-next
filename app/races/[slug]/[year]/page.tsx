@@ -21,7 +21,7 @@ async function getData(slug: string, year: number) {
   }
 }
 
-function formatRiderName(name: string): string {
+function formatRiderName(name: string | null | undefined): string {
   if (!name) return ''
   return name.split(' ').map(w => {
     if (w === w.toUpperCase() && w.length > 1) return w.charAt(0) + w.slice(1).toLowerCase()
@@ -40,9 +40,15 @@ export default async function EditionPage({ params }: { params: { slug: string; 
   const { race, result, stages, reviews, availYears } = await getData(params.slug, year)
   if (!race) notFound()
 
-  const isStageRace = ['Grand Tour', 'Stage Race'].includes(race.race_type)
+  const isStageRace = race.race_type
+    ? ['Grand Tour', 'Stage Race'].includes(race.race_type)
+    : false
   const prevYear = availYears.find((y: number) => y < year)
   const nextYear = [...availYears].reverse().find((y: number) => y > year)
+
+  const avgRating = reviews.length > 0
+    ? (reviews.reduce((s: number, r: any) => s + (r.rating || 0), 0) / reviews.length).toFixed(1)
+    : null
 
   return (
     <div>
@@ -138,11 +144,11 @@ export default async function EditionPage({ params }: { params: { slug: string; 
             </>
           )}
 
-          {reviews.length > 0 && (
+          {avgRating && (
             <div style={{ marginTop: 24 }}>
               <div className="rsp-st">Avg Rating</div>
               <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: 'var(--gold)' }}>
-                {(reviews.reduce((s: number, r: any) => s + (r.rating || 0), 0) / reviews.length).toFixed(1)}
+                {avgRating}
               </div>
               <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: 2 }}>{reviews.length} ratings</div>
             </div>
