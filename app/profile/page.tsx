@@ -166,6 +166,7 @@ export default function ProfilePage() {
   const withReviews = logs.filter(l => l.review?.trim()).slice(0, 5)
 
   return (
+    <>
     <div className="profile-layout">
       {/* Column 1: stats */}
       <div className="profile-sidebar">
@@ -339,5 +340,6 @@ export default function ProfilePage() {
         if (user) loadAll(user.id)
       }} />
     )}
+    </>
   )
 }
