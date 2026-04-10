@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { useUser } from '@/app/context/UserContext'
 import LogRaceSearch from './LogRaceSearch'
+import NotificationBell from './NotificationBell'
 
 export default function Nav() {
   const path = usePathname()
@@ -45,6 +46,7 @@ export default function Nav() {
           {user ? (
             <>
               <button onClick={handleLogRace} className="nav-a nav-cta">+ Log Race</button>
+              <NotificationBell />
               <button
                 onClick={handleSignOut}
                 style={{ background: 'none', border: 'none', color: 'var(--ml)', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', padding: 0 }}>
