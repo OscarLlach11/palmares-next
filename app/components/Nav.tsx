@@ -5,12 +5,14 @@ import { useState } from 'react'
 import { useUser } from '@/app/context/UserContext'
 import LogRaceSearch from './LogRaceSearch'
 import NotificationBell from './NotificationBell'
+import SearchModal from './SearchModal'
 
 export default function Nav() {
   const path = usePathname()
   const router = useRouter()
   const { user, profile, signOut } = useUser()
   const [showLogSearch, setShowLogSearch] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
 
   const initials = (profile?.display_name || user?.email || 'U')
     .split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
@@ -41,8 +43,18 @@ export default function Nav() {
           {navLink('/top', 'Top Races')}
           {navLink('/members', 'Members')}
           {user && navLink('/log', 'My Log')}
+          {user && navLink('/watchlist', 'Watchlist')}
           {user && navLink('/stats', 'Stats')}
           {user && navLink('/profile', 'Profile')}
+
+          {/* Search button */}
+          <button onClick={() => setShowSearch(true)}
+            style={{ background: 'none', border: 'none', color: 'var(--ml)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 4 }}
+            title="Search races & riders">
+            <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </button>
 
           {user ? (
             <>
@@ -70,6 +82,7 @@ export default function Nav() {
       </nav>
 
       {showLogSearch && <LogRaceSearch onClose={() => setShowLogSearch(false)} />}
+      {showSearch && <SearchModal onClose={() => setShowSearch(false)} />}
     </>
   )
 }
