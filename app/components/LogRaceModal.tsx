@@ -12,10 +12,34 @@ interface Props {
   initialYear?: number
 }
 
-const RATING_LABELS: Record<number, string> = {
-  0: '', 1: 'Unwatchable', 2: 'Disappointing', 3: 'Decent',
-  4: 'Good', 5: 'Very Good', 6: 'Great', 7: 'Superb',
-  8: 'Excellent', 9: 'Near Perfect', 10: 'All-Time Classic',
+const RATING_LABELS: Record<string, string> = {
+  '0': '', '0.5': 'Just Riding', '1': 'Unwatchable', '1.5': 'Very Poor',
+  '2': 'Disappointing', '2.5': 'Decent', '3': 'Good', '3.5': 'Very Good',
+  '4': 'Great', '4.5': 'Superb', '5': 'All-Time Classic',
+}
+
+const HALF_STARS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5]
+
+function StarDisplay({ rating, size = 20 }: { rating: number; size?: number }) {
+  return (
+    <div style={{ display: 'flex', gap: 2 }}>
+      {[1, 2, 3, 4, 5].map(s => {
+        const fill = Math.min(1, Math.max(0, rating - (s - 1)))
+        const pct = Math.round(fill * 100)
+        return (
+          <div key={s} style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
+            <svg width={size} height={size} viewBox="0 0 24 24" style={{ position: 'absolute' }}>
+              <path fill="var(--border-light)" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+            </svg>
+            <svg width={size} height={size} viewBox="0 0 24 24"
+              style={{ position: 'absolute', clipPath: `inset(0 ${100 - pct}% 0 0)` }}>
+              <path fill="var(--gold)" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+            </svg>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 export default function LogRaceModal({ slug, raceName, gradient, availYears, onClose, initialYear }: Props) {
@@ -182,16 +206,26 @@ export default function LogRaceModal({ slug, raceName, gradient, availYears, onC
               {/* Rating */}
               <div style={{ marginBottom: 20 }}>
                 <label style={{ fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--muted)', display: 'block', marginBottom: 10 }}>Rating</label>
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                  {HALF_STARS.map(n => (
                     <button key={n} onClick={() => setRating(rating === n ? 0 : n)}
-                      style={{ width: 36, height: 36, fontSize: 13, fontFamily: "'Bebas Neue', sans-serif", cursor: 'pointer', background: rating === n ? 'var(--gold)' : 'var(--card-bg)', color: rating === n ? '#000' : 'var(--fg)', border: `1px solid ${rating === n ? 'var(--gold)' : 'var(--border)'}`, transition: 'all .15s' }}>
+                      style={{
+                        padding: '4px 10px', fontSize: 11, fontFamily: "'DM Sans', sans-serif",
+                        cursor: 'pointer', letterSpacing: 0.5,
+                        background: rating === n ? 'var(--gold)' : 'var(--card-bg)',
+                        color: rating === n ? '#000' : 'var(--fg)',
+                        border: `1px solid ${rating === n ? 'var(--gold)' : 'var(--border)'}`,
+                        transition: 'all .15s',
+                      }}>
                       {n}
                     </button>
                   ))}
                 </div>
                 {rating > 0 && (
-                  <div style={{ fontSize: 11, color: 'var(--gold)', letterSpacing: 1 }}>{RATING_LABELS[rating]}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <StarDisplay rating={rating} size={18} />
+                    <span style={{ fontSize: 11, color: 'var(--gold)', letterSpacing: 1 }}>{RATING_LABELS[String(rating)]}</span>
+                  </div>
                 )}
               </div>
 
