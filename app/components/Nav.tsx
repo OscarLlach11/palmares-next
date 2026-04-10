@@ -41,6 +41,7 @@ export default function Nav() {
           {navLink('/top', 'Top Races')}
           {navLink('/members', 'Members')}
           {user && navLink('/log', 'My Log')}
+          {user && navLink('/stats', 'Stats')}
           {user && navLink('/profile', 'Profile')}
 
           {user ? (
