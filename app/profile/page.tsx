@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { useUser } from '@/app/context/UserContext'
+import EditProfileModal from '@/app/components/EditProfileModal'
 
 function formatRiderName(name: string | null | undefined): string {
   if (!name) return ''
@@ -50,27 +52,22 @@ type Race = { slug: string; race_name: string; gradient: string; flag: string; c
 
 export default function ProfilePage() {
   const router = useRouter()
+  const { user, profile, loading: authLoading, refreshProfile } = useUser()
   const [loading, setLoading] = useState(true)
-  const [user, setUser] = useState<any>(null)
-  const [profile, setProfile] = useState<Profile | null>(null)
+  const [localProfile, setLocalProfile] = useState<Profile | null>(null)
   const [logs, setLogs] = useState<RaceLog[]>([])
   const [races, setRaces] = useState<Race[]>([])
   const [followers, setFollowers] = useState(0)
   const [following, setFollowing] = useState(0)
   const [riderImages, setRiderImages] = useState<Record<string, string>>({})
   const [favRace, setFavRace] = useState<Race | null>(null)
-  const [editingName, setEditingName] = useState(false)
-  const [newName, setNewName] = useState('')
+  const [editProfileOpen, setEditProfileOpen] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!data.session) { setLoading(false); return }
-      const u = data.session.user
-      setUser(u)
-      await loadAll(u.id)
-      setLoading(false)
-    })
-  }, [])
+    if (authLoading) return
+    if (!user) { setLoading(false); return }
+    loadAll(user.id)
+  }, [user, authLoading])
 
   async function loadAll(uid: string) {
     const [profRes, logsRes, racesRes] = await Promise.all([
@@ -81,7 +78,7 @@ export default function ProfilePage() {
     const prof = profRes.data as Profile | null
     const allLogs = (logsRes.data || []) as RaceLog[]
     const allRaces = (racesRes.data || []) as Race[]
-    setProfile(prof)
+    setLocalProfile(prof)
     setLogs(allLogs)
     setRaces(allRaces)
 
@@ -109,13 +106,7 @@ export default function ProfilePage() {
         setRiderImages(map)
       }
     }
-  }
-
-  async function saveName() {
-    if (!user || !newName.trim()) return
-    await supabase.from('profiles').update({ display_name: newName.trim() }).eq('user_id', user.id)
-    setProfile(p => p ? { ...p, display_name: newName.trim() } : p)
-    setEditingName(false)
+    setLoading(false)
   }
 
   if (loading) return <div style={{ padding: 40, color: 'var(--muted)' }}>Loading…</div>
@@ -130,11 +121,14 @@ export default function ProfilePage() {
     </div>
   )
 
+  // Use profile from context (updates after EditProfileModal saves)
+  const displayProfile = profile || localProfile
+
   // Stats
   const rated = logs.filter(l => l.rating && l.rating > 0)
   const avg = rated.length ? (rated.reduce((s, l) => s + (l.rating || 0), 0) / rated.length).toFixed(1) : '—'
   const liveCount = logs.filter(l => l.watched_live).length
-  const initials = (profile?.display_name || 'C').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+  const initials = (displayProfile?.display_name || 'C').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
 
   // Rating distribution (0.5–5 in 0.5 steps)
   const buckets: Record<string, number> = {}
@@ -176,25 +170,14 @@ export default function ProfilePage() {
       {/* Column 1: stats */}
       <div className="profile-sidebar">
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24 }}>
-          <div className="profile-avatar" style={{ cursor: 'default' }}>
-            {profile?.avatar_url
-              ? <img src={profile.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+          <div className="profile-avatar" style={{ cursor: 'pointer' }} onClick={() => setEditProfileOpen(true)}>
+            {displayProfile?.avatar_url
+              ? <img src={displayProfile.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
               : initials}
           </div>
           <div>
-            {editingName ? (
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input value={newName} onChange={e => setNewName(e.target.value)}
-                  style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', color: 'var(--fg)', padding: '4px 8px', fontSize: 13 }} />
-                <button onClick={saveName} className="bp" style={{ padding: '4px 10px', fontSize: 10 }}>Save</button>
-                <button onClick={() => setEditingName(false)} className="bs" style={{ padding: '4px 10px', fontSize: 10 }}>✕</button>
-              </div>
-            ) : (
-              <div className="profile-name" style={{ cursor: 'pointer' }} onClick={() => { setNewName(profile?.display_name || ''); setEditingName(true) }}>
-                {(profile?.display_name || 'Cyclist').toUpperCase()}
-              </div>
-            )}
-            <div className="profile-handle">@{profile?.handle || 'cyclist'}</div>
+            <div className="profile-name">{(displayProfile?.display_name || 'Cyclist').toUpperCase()}</div>
+            <div className="profile-handle">@{displayProfile?.handle || 'cyclist'}</div>
           </div>
         </div>
 
@@ -215,7 +198,7 @@ export default function ProfilePage() {
 
         <div style={{ marginTop: 8 }}>
           <button className="bs" style={{ width: '100%', fontSize: 9, padding: 8 }}
-            onClick={() => { setNewName(profile?.display_name || ''); setEditingName(true) }}>
+            onClick={() => setEditProfileOpen(true)}>
             ✏ Edit Profile
           </button>
         </div>
@@ -255,7 +238,7 @@ export default function ProfilePage() {
       <div className="profile-main" style={{ borderRight: '1px solid var(--border)' }}>
         <div className="profile-section-title">Favourite Riders</div>
         <div className="fav-riders-grid">
-          {(profile?.fav_riders || [null, null, null, null]).slice(0, 4).map((rider: any, i: number) => {
+          {(displayProfile?.fav_riders || [null, null, null, null]).slice(0, 4).map((rider: any, i: number) => {
             const name = typeof rider === 'string' ? rider : rider?.name
             const imgUrl = riderImages[name] || (typeof rider === 'object' ? rider?.imageUrl : null)
             if (name) {
@@ -289,7 +272,7 @@ export default function ProfilePage() {
             </div>
             <div className="fav-race-info">
               <div className="fav-race-name">{favRace.race_name}</div>
-              <div className="fav-race-year">{profile?.fav_race_year} edition</div>
+              <div className="fav-race-year">{displayProfile?.fav_race_year} edition</div>
               <div className="fav-race-label">★ All-time favourite</div>
             </div>
           </div>
@@ -349,5 +332,12 @@ export default function ProfilePage() {
         }) : <div style={{ color: 'var(--muted)', fontSize: 12 }}>Write a review when logging a race — it will appear here.</div>}
       </div>
     </div>
+
+    {editProfileOpen && (
+      <EditProfileModal onClose={() => {
+        setEditProfileOpen(false)
+        if (user) loadAll(user.id)
+      }} />
+    )}
   )
 }
