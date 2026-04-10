@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import LogEditionButton from '@/app/components/LogEditionButton'
 
 export const revalidate = 3600
 
@@ -82,6 +83,17 @@ export default async function EditionPage({ params }: { params: { slug: string; 
               </div>
             </div>
           )}
+
+          {/* Log button */}
+          <div className="rsp-section" style={{ paddingTop: 0 }}>
+            <LogEditionButton
+              slug={params.slug}
+              raceName={race.race_name}
+              gradient={race.gradient || '#1a1a1a'}
+              year={year}
+              availYears={availYears}
+            />
+          </div>
 
           {/* Stages */}
           {isStageRace && stages.length > 0 && (
