@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import StageComments from '@/app/components/StageComments'
 
 export const revalidate = 3600
 
@@ -160,6 +161,8 @@ export default async function StagePage({ params }: { params: { slug: string; ye
                   </Link>
                 )}
               </div>
+
+              <StageComments slug={params.slug} year={year} stageNum={stageNum} />
             </>
           ) : (
             <div className="empty">No data available for this stage.</div>
