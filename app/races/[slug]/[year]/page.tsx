@@ -29,12 +29,6 @@ function formatRiderName(name: string | null | undefined): string {
   }).join(' ')
 }
 
-function starsDisplay(rating: number) {
-  const full = Math.floor(rating)
-  const half = rating % 1 >= 0.5
-  return '★'.repeat(full) + (half ? '½' : '')
-}
-
 export default async function EditionPage({ params }: { params: { slug: string; year: string } }) {
   const year = parseInt(params.year)
   const { race, result, stages, reviews, availYears } = await getData(params.slug, year)
@@ -43,6 +37,9 @@ export default async function EditionPage({ params }: { params: { slug: string; 
   const isStageRace = race.race_type
     ? ['Grand Tour', 'Stage Race'].includes(race.race_type)
     : false
+
+  const top10: string[] = Array.isArray(result?.top10) ? result.top10 : []
+
   const prevYear = availYears.find((y: number) => y < year)
   const nextYear = [...availYears].reverse().find((y: number) => y > year)
 
@@ -77,11 +74,11 @@ export default async function EditionPage({ params }: { params: { slug: string; 
           </div>
 
           {/* Winner */}
-          {result?.top10?.[0] && (
+          {top10[0] && (
             <div className="rsp-section">
               <div className="rsp-st">Winner</div>
               <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, marginBottom: 4 }}>
-                {formatRiderName(result.top10[0])}
+                {formatRiderName(top10[0])}
               </div>
             </div>
           )}
@@ -128,11 +125,11 @@ export default async function EditionPage({ params }: { params: { slug: string; 
 
         {/* Sidebar */}
         <div className="rsp-sidebar">
-          {result?.top10 && result.top10.length > 0 && (
+          {top10.length > 0 && (
             <>
               <div className="rsp-st">Top 10</div>
               <div>
-                {result.top10.slice(0, 10).map((name: string, i: number) => (
+                {top10.slice(0, 10).map((name: string, i: number) => (
                   <div key={i} className="top10-row">
                     <span className="t10-pos">{i + 1}</span>
                     <Link href={`/riders/${encodeURIComponent(name)}`} style={{ fontSize: 13, flex: 1, textDecoration: 'none', color: 'inherit' }}>
