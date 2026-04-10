@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import StageComments from '@/app/components/StageComments'
+import LogStageButton from '@/app/components/LogStageButton'
 
 export const revalidate = 3600
 
@@ -145,6 +146,22 @@ export default async function StagePage({ params }: { params: { slug: string; ye
                   })}
                 </div>
               )}
+
+              {/* Log button */}
+              <div className="rsp-section" style={{ paddingTop: 0 }}>
+                <LogStageButton
+                  slug={params.slug}
+                  raceName={race.race_name}
+                  gradient={race.gradient || '#1a1a1a'}
+                  year={year}
+                  stageNum={stageNum}
+                  stageLabel={stage?.stage_label}
+                />
+                <Link href={`/races/${params.slug}/${year}`} className="bs"
+                  style={{ textDecoration: 'none', display: 'inline-block', marginLeft: 8, fontSize: 10 }}>
+                  ← Race Page
+                </Link>
+              </div>
 
               {/* Prev / Next nav */}
               <div style={{ display: 'flex', gap: 8, padding: '0 0 24px' }}>
