@@ -171,8 +171,17 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     } else {
       setFollowingIds(prev => new Set([...prev, targetUserId]))
       await supabase.from('follows').insert({ follower_id: user.id, following_id: targetUserId })
+      // Fire notification
+      supabase.from('notifications').insert({
+        user_id: targetUserId,
+        type: 'follow',
+        actor_id: user.id,
+        actor_handle: profile?.handle || '',
+        actor_name: profile?.display_name || 'Someone',
+        read: false,
+      }).then(() => {})
     }
-  }, [user, followingIds])
+  }, [user, profile, followingIds])
 
   // ── Derived helpers ────────────────────────────────────────────────────────
   const isLogged = useCallback((slug: string) => !!(logs[slug]?.length), [logs])
