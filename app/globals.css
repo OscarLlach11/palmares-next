@@ -390,3 +390,235 @@ nav {
   .rsp-sidebar{display:none;}
   .feed-grid{padding:0 16px 8px;}
 }
+/* ── Feed (Following section) ─────────────────────────────────── */
+.feed-grid{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;scrollbar-width:none;}
+.feed-grid::-webkit-scrollbar{display:none;}
+.feed-item{flex-shrink:0;width:130px;cursor:pointer;text-decoration:none;}
+.feed-item:hover .feed-poster{border-color:var(--gold-dim);}
+.feed-poster{width:130px;height:170px;border:2px solid transparent;transition:border-color .15s;position:relative;overflow:hidden;}
+.feed-poster-bg{width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:12px;}
+.feed-poster-title{font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;line-height:1.15;color:rgba(255,255,255,.9);text-align:center;text-shadow:0 1px 4px rgba(0,0,0,.6);}
+.feed-poster-stage{position:absolute;top:8px;left:8px;font-size:8px;letter-spacing:1.5px;text-transform:uppercase;background:rgba(0,0,0,.6);color:var(--gold);padding:2px 5px;}
+.feed-user{display:flex;align-items:center;gap:6px;margin-top:6px;}
+.feed-avatar{width:20px;height:20px;border-radius:50%;background:var(--card-bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:8px;color:var(--white);flex-shrink:0;overflow:hidden;}
+.feed-avatar img{width:100%;height:100%;object-fit:cover;}
+.feed-username{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.feed-stars{margin-top:3px;display:flex;align-items:center;gap:4px;}
+
+/* ── Profile layout ───────────────────────────────────────────── */
+.profile-layout{display:grid;grid-template-columns:1fr 2fr 1fr;min-height:calc(100vh - 57px);}
+.profile-sidebar{border-right:1px solid var(--border);padding:36px 28px;}
+.profile-main{padding:36px 28px;}
+.profile-avatar{width:88px;height:88px;border-radius:50%;background:linear-gradient(135deg,var(--gold-dim),var(--gold));display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:36px;color:var(--black);cursor:pointer;transition:opacity .15s;flex-shrink:0;overflow:hidden;position:relative;}
+.profile-avatar:hover{opacity:.85;}
+.profile-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
+.profile-name{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:3px;margin-bottom:2px;}
+.profile-handle{font-size:11px;color:var(--muted);letter-spacing:2px;margin-bottom:20px;}
+.profile-stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);margin-bottom:28px;}
+.profile-stat-cell{background:var(--card-bg);padding:12px 10px;}
+.profile-stat-cell.clickable{cursor:pointer;transition:background .15s;}
+.profile-stat-cell.clickable:hover{background:var(--border);}
+.profile-stat-n{font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--white);line-height:1;}
+.profile-stat-l{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-top:2px;}
+.profile-section-title{font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:3px;color:var(--gold);margin-bottom:16px;margin-top:28px;}
+
+/* ── Fav riders & race ────────────────────────────────────────── */
+.fav-riders-grid{display:flex;gap:10px;margin-bottom:32px;flex-wrap:wrap;}
+.fav-rider-slot{background:var(--card-bg);border:1px solid var(--border);cursor:pointer;transition:border-color .15s;width:120px;aspect-ratio:2/3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;}
+.fav-rider-slot:hover{border-color:var(--gold-dim);}
+.fav-rider-slot.filled{border-color:var(--border-light);padding:0;justify-content:flex-end;position:relative;overflow:hidden;aspect-ratio:2/3;}
+.fav-rider-slot.filled:hover{border-color:var(--gold);}
+.fav-race-card{background:var(--card-bg);border:1px solid var(--border);display:flex;align-items:center;gap:16px;padding:16px;cursor:pointer;transition:border-color .15s;width:100%;}
+.fav-race-card:hover{border-color:var(--gold-dim);}
+.fav-race-swatch{width:60px;height:60px;flex-shrink:0;overflow:hidden;}
+.fav-race-info{flex:1;}
+.fav-race-name{font-family:'DM Serif Display',serif;font-size:16px;margin-bottom:2px;color:var(--white);}
+.fav-race-year{font-size:10px;color:var(--gold-dim);letter-spacing:1px;}
+.fav-race-label{font-size:10px;color:var(--muted);margin-top:3px;}
+
+/* ── Sidebar log entries ──────────────────────────────────────── */
+.sle{border-left:2px solid var(--border-light);padding:8px 0 8px 12px;margin-bottom:12px;cursor:pointer;transition:border-color .15s;display:block;}
+.sle:hover{border-color:var(--gold);}
+.sle-name{font-family:'DM Serif Display',serif;font-size:13px;margin-bottom:1px;color:var(--white);}
+.sle-yr{font-size:10px;color:var(--gold-dim);letter-spacing:1px;}
+.sle-d{font-size:9px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:3px;}
+.empty-log{color:var(--muted);font-size:12px;line-height:2;font-style:italic;padding:16px 0;}
+
+/* ── Notifications ────────────────────────────────────────────── */
+.notif-item{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;position:relative;}
+.notif-item:hover{background:rgba(255,255,255,.03);}
+.notif-item.unread{background:rgba(232,200,74,.04);}
+.notif-body{flex:1;min-width:0;}
+.notif-text{font-size:12px;line-height:1.5;color:var(--white);}
+.notif-text strong{font-weight:500;}
+.notif-meta{font-size:10px;color:var(--muted);margin-top:3px;letter-spacing:.5px;}
+
+/* ── Review likes & comments ──────────────────────────────────── */
+.rv-like-btn{display:flex;align-items:center;gap:6px;background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;font-size:11px;letter-spacing:1px;cursor:pointer;transition:all .15s;font-family:'DM Sans',sans-serif;}
+.rv-like-btn:hover,.rv-like-btn.liked{border-color:var(--gold);color:var(--gold);}
+.rv-like-btn:disabled{opacity:.4;cursor:not-allowed;}
+.rv-comment-input{width:100%;background:var(--card-bg);border:1px solid var(--border);color:var(--white);padding:10px 14px;font-family:'DM Sans',sans-serif;font-size:13px;resize:vertical;min-height:80px;box-sizing:border-box;transition:border-color .15s;}
+.rv-comment-input:focus{outline:none;border-color:var(--gold-dim);}
+.rv-comment{padding:14px 0;border-bottom:1px solid var(--border);}
+.rv-comment-author{font-size:11px;letter-spacing:1px;color:var(--gold);margin-bottom:4px;display:flex;align-items:center;gap:8px;}
+.rv-comment-text{font-size:13px;line-height:1.6;}
+
+/* ── Rider page ───────────────────────────────────────────────── */
+.rider-page-name{font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:3px;color:var(--gold);line-height:1;}
+.rider-page-meta{font-size:11px;color:var(--muted);letter-spacing:1px;margin-top:6px;}
+.rider-race-swatch{width:32px;height:32px;flex-shrink:0;}
+.rider-race-name{font-size:12px;letter-spacing:1px;color:var(--white);font-family:'Bebas Neue',sans-serif;}
+.rider-race-year{font-size:11px;color:var(--muted);}
+
+/* ── Startlist extras ─────────────────────────────────────────── */
+.startlist-rider-photo{width:32px;height:42px;object-fit:cover;object-position:top;flex-shrink:0;background:var(--card-bg);}
+.startlist-rider-photo-placeholder{width:32px;height:42px;display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:12px;color:#fff;flex-shrink:0;}
+.startlist-rider-name{font-size:11px;font-weight:500;line-height:1.3;}
+.startlist-rider-team{font-size:10px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.startlist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-top:12px;}
+
+/* ── Race sub-layout ──────────────────────────────────────────── */
+.race-sub-layout{display:grid;grid-template-columns:1fr 300px;min-height:calc(100vh - 57px);}
+
+/* ── Edition comment extras ───────────────────────────────────── */
+.edition-comment-delete{font-size:10px;color:var(--muted);cursor:pointer;margin-left:auto;padding:2px 6px;border:1px solid transparent;transition:all .15s;background:none;}
+.edition-comment-delete:hover{color:#e55;border-color:#e55;}
+
+/* ── Responsive ───────────────────────────────────────────────── */
+@media(max-width:820px){
+  .profile-layout{grid-template-columns:1fr;}
+  .profile-sidebar{border-right:none;border-bottom:1px solid var(--border);padding:24px 20px 16px;}
+  .profile-main{padding:20px;}
+  .profile-main[style*="border-right"]{border-right:none!important;border-bottom:1px solid var(--border);}
+  .race-sub-layout{grid-template-columns:1fr;}
+  .rsp-sidebar{display:none;}
+  .feed-grid{padding:0 16px 8px;}
+}
+
+/* ── Missing CSS variables ────────────────────────────────────── */
+:root {
+  --fg: #f0ede8;        /* alias for --white / --text */
+  --bg: #0a0a0a;        /* alias for --black */
+  --border: #252525;    /* ensure --border is defined */
+}
+
+/* ── Watchlist / bwl button ───────────────────────────────────── */
+.bwl{background:transparent;color:var(--ml);border:1px solid var(--border-light);padding:10px 16px;font-family:'DM Sans',sans-serif;font-size:10px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:all .15s;}
+.bwl:hover{border-color:var(--gold-dim);color:var(--gold);}
+.bwl.on{border-color:var(--gold);color:var(--gold);}
+
+/* ── Stats grid ───────────────────────────────────────────────── */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;}
+
+/* ── Picker (rider/race picker modal) ────────────────────────── */
+.picker-list{max-height:58vh;overflow-y:auto;margin-top:14px;}
+.picker-item{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;}
+.picker-item:hover{background:rgba(255,255,255,.03);}
+.picker-item:last-child{border-bottom:none;}
+.picker-item-icon{width:36px;height:36px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:13px;}
+.picker-item-name{font-size:13px;flex:1;}
+.picker-item-meta{font-size:10px;color:var(--muted);}
+.picker-selected-badge{font-size:9px;letter-spacing:1px;color:var(--gold);border:1px solid var(--gold);padding:2px 6px;}
+.picker-search{width:100%;background:var(--black);border:none;border-bottom:2px solid var(--gold);color:var(--white);padding:10px 0;font-family:'DM Sans',sans-serif;font-size:15px;outline:none;margin-bottom:4px;}
+.picker-search::placeholder{color:var(--muted);}
+
+/* ── Log entry card (for log page) ───────────────────────────── */
+.log-entry-card{background:var(--card-bg);border:1px solid var(--border);padding:14px;margin-bottom:8px;}
+.lec-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;}
+.lec-year{font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--white);letter-spacing:2px;}
+.lec-date{font-size:10px;color:var(--ml);text-align:right;}
+.lec-review{font-size:13px;color:#999;font-style:italic;line-height:1.7;}
+.lec-actions{display:flex;gap:6px;margin-top:10px;}
+
+/* ── Hero section ─────────────────────────────────────────────── */
+.hero{padding:28px 40px 24px;position:relative;overflow:hidden;border-bottom:1px solid var(--border);}
+.hstats{display:flex;gap:28px;flex-wrap:wrap;}
+.hstat-n{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:1px;}
+.hstat-l{font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--muted);}
+
+/* ── Search disc ──────────────────────────────────────────────── */
+.search-wrap-disc{padding:10px 40px 0;}
+.search-disc{width:100%;max-width:400px;background:var(--card-bg);border:1px solid var(--border);color:var(--white);padding:9px 16px;font-family:'DM Sans',sans-serif;font-size:13px;outline:none;transition:border-color .15s;}
+.search-disc:focus{border-color:var(--gold-dim);}
+
+/* ── Fav race extras ──────────────────────────────────────────── */
+.fav-race-year{font-size:10px;color:var(--gold-dim);letter-spacing:1px;margin-top:2px;}
+.fav-race-label{font-size:10px;color:var(--muted);margin-top:3px;}
+.fav-race-sub{font-size:11px;color:var(--ml);}
+.fav-race-empty{font-size:11px;color:var(--muted);font-style:italic;}
+
+/* ── Empty state ──────────────────────────────────────────────── */
+.empty{padding:48px 40px;text-align:center;color:var(--muted);font-size:13px;font-style:italic;}
+
+/* ── Tier bar ─────────────────────────────────────────────────── */
+.tier-bar{display:flex;gap:0;padding:12px 40px 0;border-bottom:none;}
+.tier-btn{background:transparent;border:none;color:var(--ml);padding:6px 16px;font-size:11px;letter-spacing:2.5px;text-transform:uppercase;cursor:pointer;font-family:'Bebas Neue',sans-serif;border-bottom:2px solid transparent;transition:all .2s;}
+.tier-btn:hover{color:var(--white);}
+.tier-btn.active{color:var(--gold);border-bottom-color:var(--gold);}
+
+/* ── Tabs ─────────────────────────────────────────────────────── */
+.tabs{display:flex;border-bottom:1px solid var(--border);padding:0 40px;overflow-x:auto;}
+.tab{font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--ml);padding:14px 0;margin-right:24px;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap;}
+.tab:hover{color:var(--white);}
+.tab.active{color:var(--gold);border-bottom-color:var(--gold);}
+
+/* ── Filter bar ───────────────────────────────────────────────── */
+.fbar{display:flex;gap:6px;padding:16px 40px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--border);}
+.fl{font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--muted);margin-right:4px;}
+.fb{background:transparent;border:1px solid var(--border);color:var(--ml);padding:4px 11px;font-size:10px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .2s;}
+.fb:hover,.fb.active{border-color:var(--gold);color:var(--gold);}
+
+/* ── Main layout (discover) ───────────────────────────────────── */
+.main-layout{display:grid;grid-template-columns:1fr 280px;}
+.main-content{border-right:1px solid var(--border);min-width:0;}
+.sidebar{padding:28px 18px;position:sticky;top:57px;height:calc(100vh - 57px);overflow-y:auto;}
+.sb-title{font-family:'Bebas Neue',sans-serif;font-size:17px;letter-spacing:3px;margin-bottom:16px;color:var(--gold);}
+
+/* ── Race grid ────────────────────────────────────────────────── */
+.race-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:1px;background:var(--border);margin-top:18px;}
+.rc{background:var(--black);cursor:pointer;transition:background .15s;}
+.rc:hover{background:#131313;}
+.rc-img{width:100%;height:110px;display:flex;align-items:flex-end;padding:8px 10px;position:relative;overflow:hidden;}
+.rc-cat{font-family:'Bebas Neue',sans-serif;font-size:9px;letter-spacing:3px;color:rgba(255,255,255,.4);position:relative;z-index:1;}
+.rc-wt{position:absolute;top:8px;right:8px;font-size:8px;letter-spacing:1.5px;background:var(--gold);color:#000;padding:2px 6px;font-family:'Bebas Neue',sans-serif;z-index:1;}
+.rc-body{padding:10px 12px 12px;}
+.rc-ctry{font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--muted);margin-bottom:2px;}
+.rc-name{font-family:'DM Serif Display',serif;font-size:14px;color:var(--white);margin-bottom:2px;line-height:1.2;}
+.rc-yr{font-size:10px;color:var(--muted);margin-bottom:5px;}
+.ra{display:flex;gap:5px;margin-top:6px;}
+
+/* ── Small buttons ────────────────────────────────────────────── */
+.bsm{font-size:9px;letter-spacing:2px;text-transform:uppercase;padding:4px 8px;border:1px solid var(--border);background:transparent;color:var(--ml);cursor:pointer;transition:all .15s;font-family:'DM Sans',sans-serif;}
+.bsm:hover{border-color:var(--gold-dim);color:var(--white);}
+.bsm.active{border-color:var(--gold);color:var(--gold);}
+.bsm.logged.active{background:var(--gold);color:var(--black);border-color:var(--gold);}
+
+/* ── Member page ──────────────────────────────────────────────── */
+.member-card{background:var(--card-bg);border:1px solid var(--border);padding:24px 20px;text-align:center;transition:border-color .15s;cursor:pointer;}
+.member-card:hover{border-color:var(--border-light);}
+.member-avatar-lg{width:96px;height:96px;border-radius:50%;margin:0 auto 14px;overflow:hidden;background:var(--card-bg);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:32px;color:var(--white);cursor:pointer;transition:border-color .15s;}
+.member-avatar-lg:hover{border-color:var(--gold);}
+.member-avatar-lg img{width:100%;height:100%;object-fit:cover;}
+.member-name{font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:2px;cursor:pointer;transition:color .15s;margin-bottom:2px;}
+.member-name:hover{color:var(--gold);}
+.member-handle{font-size:10px;color:var(--muted);letter-spacing:1px;margin-bottom:14px;}
+.member-rider-slot{width:44px;aspect-ratio:2/3;overflow:hidden;cursor:pointer;transition:opacity .15s;flex-shrink:0;}
+.member-rider-slot:hover{opacity:.8;}
+.member-rider-slot img{width:100%;height:100%;object-fit:cover;object-position:center top;}
+.member-rider-initials{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:12px;color:#fff;}
+
+/* ── Responsive extras ────────────────────────────────────────── */
+@media(max-width:820px){
+  .main-layout{grid-template-columns:1fr;}
+  .sidebar{display:none;}
+  .tier-bar{padding:8px 16px 0;}
+  .tabs{padding:0 16px;}
+  .fbar{padding:10px 16px;gap:5px;overflow-x:auto;flex-wrap:nowrap;}
+  .search-wrap-disc{padding:10px 16px 0;}
+  .search-disc{max-width:100%;}
+  .race-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));}
+  .hstats{gap:16px;}
+  .hero{padding:20px 20px 18px;}
+  .hero h1{font-size:clamp(28px,8vw,48px);}
+  .empty{padding:36px 20px;}
+}
