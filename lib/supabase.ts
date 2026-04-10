@@ -3,10 +3,18 @@ import { createClient } from '@supabase/supabase-js'
 const SUPABASE_URL = 'https://pkbxgeloejmnblwpsuch.supabase.co'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBrYnhnZWxvZWptbmJsd3BzdWNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4MTU0MDcsImV4cCI6MjA4ODM5MTQwN30.2JbsShp7ZIQ4qs-kgF7_O4wWZDTgQ_qDdI9X9SFjnWA'
 
-// Server-side client (used in Server Components and Route Handlers)
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+// Single client instance — works in both Server Components and Client Components
+// Auth session is persisted in localStorage on the browser side
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+})
 
-// Types matching the Supabase schema
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 export interface Race {
   slug: string
   race_name: string
@@ -62,6 +70,7 @@ export interface Profile {
   fav_race_year: number | null
   fav_race_stage: number | null
   avatar_url: string | null
+  onboarding_complete: boolean | null
 }
 
 export interface RaceLog {
@@ -69,6 +78,19 @@ export interface RaceLog {
   user_id: string
   slug: string
   year: number
+  rating: number | null
+  review: string | null
+  watched_live: boolean | null
+  date_watched: string | null
+  created_at: string
+}
+
+export interface StageLog {
+  id: string
+  user_id: string
+  race_slug: string
+  year: number
+  stage_num: number
   rating: number | null
   review: string | null
   watched_live: boolean | null
