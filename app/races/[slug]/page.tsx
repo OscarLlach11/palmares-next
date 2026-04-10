@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import EditionLink from './EditionLink'
 import WatchlistButton from '@/app/components/WatchlistButton'
+import LogRaceButton from '@/app/components/LogRaceButton'
 
 export const revalidate = 3600
 
@@ -156,14 +157,16 @@ export default async function RacePage({ params }: { params: { slug: string } })
               style={{ display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 8 }}>
               View {years[0]} Edition
             </Link>
-            <div style={{ marginTop: 10 }}>
+            <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+              <LogRaceButton slug={race.slug} raceName={race.race_name} gradient={race.gradient || '#1a1a1a'} />
               <WatchlistButton slug={race.slug} />
             </div>
           </div>
         )}
 
         {years.length === 0 && (
-          <div style={{ marginTop: 24 }}>
+          <div style={{ marginTop: 24, display: 'flex', gap: 8 }}>
+            <LogRaceButton slug={race.slug} raceName={race.race_name} gradient={race.gradient || '#1a1a1a'} />
             <WatchlistButton slug={race.slug} />
           </div>
         )}
