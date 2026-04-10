@@ -2,12 +2,14 @@
 import { useState } from 'react'
 import { useUser } from '@/app/context/UserContext'
 import LogRaceSearch from './LogRaceSearch'
+import SearchModal from './SearchModal'
 import { useRouter } from 'next/navigation'
 
 export default function MobileNav() {
   const { user } = useUser()
   const router = useRouter()
   const [showLogSearch, setShowLogSearch] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
 
   function handleLogRace() {
     if (!user) { router.push('/login'); return }
@@ -30,10 +32,10 @@ export default function MobileNav() {
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
             Log Race
           </button>
-          <a href="/members" className="mob-nav-btn">
-            <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            Members
-          </a>
+          <button onClick={() => setShowSearch(true)} className="mob-nav-btn" style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Search
+          </button>
           {user ? (
             <a href="/profile" className="mob-nav-btn">
               <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -49,6 +51,7 @@ export default function MobileNav() {
       </div>
 
       {showLogSearch && <LogRaceSearch onClose={() => setShowLogSearch(false)} />}
+      {showSearch && <SearchModal onClose={() => setShowSearch(false)} />}
     </>
   )
 }
