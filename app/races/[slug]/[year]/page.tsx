@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import LogEditionButton from '@/app/components/LogEditionButton'
 import EditionComments from '@/app/components/EditionComments'
+import EditionStartlist from '@/app/components/EditionStartlist'
 
 export const revalidate = 3600
 
@@ -123,13 +124,19 @@ export default async function EditionPage({ params }: { params: { slug: string; 
                 const p = r.profiles as any
                 if (!r.review) return null
                 return (
-                  <div key={r.user_id} className="community-review-row">
+                  <Link
+                    key={r.user_id}
+                    href={`/review/${p?.handle || r.user_id}/${params.slug}/${year}`}
+                    className="community-review-row"
+                    style={{ textDecoration: 'none', display: 'block' }}
+                  >
                     <div className="community-review-meta">
                       <span className="community-review-handle">@{p?.handle || 'cyclist'}</span>
                       {r.rating && <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, color: 'var(--gold)' }}>{r.rating.toFixed(1)}</span>}
                     </div>
                     <div className="community-review-text">{r.review}</div>
-                  </div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4, letterSpacing: 0.5 }}>View full review →</div>
+                  </Link>
                 )
               })}
             </div>
@@ -165,6 +172,10 @@ export default async function EditionPage({ params }: { params: { slug: string; 
               <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: 2 }}>{reviews.length} ratings</div>
             </div>
           )}
+
+          <div style={{ marginTop: 24 }}>
+            <EditionStartlist slug={params.slug} year={year} />
+          </div>
         </div>
       </div>
     </div>
