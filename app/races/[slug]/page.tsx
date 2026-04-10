@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import EditionLink from './EditionLink'
+import WatchlistButton from '@/app/components/WatchlistButton'
 
 export const revalidate = 3600
 
@@ -85,21 +86,41 @@ export default async function RacePage({ params }: { params: { slug: string } })
         {/* Info */}
         <div className="rsp-section">
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 16 }}>
-            <div><div style={{ fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 2 }}>Type</div>
-              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 14 }}>{race.race_type}</div></div>
-            <div><div style={{ fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 2 }}>Since</div>
-              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 14 }}>{race.first_year}</div></div>
-            {race.distance && <div><div style={{ fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 2 }}>Distance</div>
-              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 14 }}>{race.distance} km</div></div>}
-            {race.tier === 'WT' && <div><div style={{ fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 2 }}>Tier</div>
-              <div style={{ background: 'var(--gold)', color: '#000', fontSize: 9, padding: '2px 8px', fontFamily: "'Bebas Neue', sans-serif", letterSpacing: 2 }}>WorldTour</div></div>}
-            {stats && <div><div style={{ fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 2 }}>Community Rating</div>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: 'var(--gold)' }}>{stats.avg} <span style={{ fontSize: 11, color: 'var(--muted)' }}>({stats.count})</span></div></div>}
+            <div>
+              <div style={{ fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 2 }}>Type</div>
+              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 14 }}>{race.race_type}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 2 }}>Since</div>
+              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 14 }}>{race.first_year}</div>
+            </div>
+            {race.distance && (
+              <div>
+                <div style={{ fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 2 }}>Distance</div>
+                <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 14 }}>{race.distance} km</div>
+              </div>
+            )}
+            {race.tier === 'WT' && (
+              <div>
+                <div style={{ fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 2 }}>Tier</div>
+                <div style={{ background: 'var(--gold)', color: '#000', fontSize: 9, padding: '2px 8px', fontFamily: "'Bebas Neue', sans-serif", letterSpacing: 2 }}>WorldTour</div>
+              </div>
+            )}
+            {stats && (
+              <div>
+                <div style={{ fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 2 }}>Community Rating</div>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: 'var(--gold)' }}>
+                  {stats.avg} <span style={{ fontSize: 11, color: 'var(--muted)' }}>({stats.count})</span>
+                </div>
+              </div>
+            )}
           </div>
           {race.subgenres && race.subgenres.length > 0 && (
-            <div>{race.subgenres.map((sg: string) => (
-              <span key={sg} className={`sg-badge ${SG_CLASS[sg] || ''}`}>{SG_LABELS[sg] || sg}</span>
-            ))}</div>
+            <div>
+              {race.subgenres.map((sg: string) => (
+                <span key={sg} className={`sg-badge ${SG_CLASS[sg] || ''}`}>{SG_LABELS[sg] || sg}</span>
+              ))}
+            </div>
           )}
           {race.description && (
             <p style={{ fontSize: 13, color: '#888', lineHeight: 1.8, marginTop: 14 }}>{race.description}</p>
@@ -127,12 +148,23 @@ export default async function RacePage({ params }: { params: { slug: string } })
         <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.8 }}>
           {race.description || fallbackDescription}
         </p>
+
         {years.length > 0 && (
           <div style={{ marginTop: 24 }}>
             <div className="rsp-st">Latest Edition</div>
-            <Link href={`/races/${race.slug}/${years[0]}`} className="bp" style={{ display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 8 }}>
+            <Link href={`/races/${race.slug}/${years[0]}`} className="bp"
+              style={{ display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 8 }}>
               View {years[0]} Edition
             </Link>
+            <div style={{ marginTop: 10 }}>
+              <WatchlistButton slug={race.slug} />
+            </div>
+          </div>
+        )}
+
+        {years.length === 0 && (
+          <div style={{ marginTop: 24 }}>
+            <WatchlistButton slug={race.slug} />
           </div>
         )}
       </div>
