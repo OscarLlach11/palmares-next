@@ -74,7 +74,6 @@ export default async function TopPage() {
               <Link key={`${entry.slug}-${entry.year}`}
                 href={`/races/${entry.slug}/${entry.year}`}
                 style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 40px', borderBottom: '1px solid var(--border)', textDecoration: 'none', transition: 'background .1s' }}
-                onMouseEnter={undefined}
                 className="lpe">
                 {/* Position */}
                 <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: i < 3 ? 28 : 20, color: i === 0 ? 'var(--gold)' : i < 3 ? 'var(--fg)' : 'var(--muted)', width: 36, flexShrink: 0, textAlign: 'center' }}>
@@ -85,8 +84,7 @@ export default async function TopPage() {
                 <div style={{ width: 48, height: 48, background: r.gradient || '#1a1a1a', flexShrink: 0, borderRadius: 2, position: 'relative', overflow: 'hidden' }}>
                   {r.logo_url && (
                     <img src={r.logo_url} alt={r.race_name}
-                      style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 4 }}
-                      onError={(e: any) => { e.target.style.display = 'none' }} />
+                      style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 4 }} />
                   )}
                 </div>
 
