@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import type { Race } from '@/lib/supabase'
 import { useUser } from '@/app/context/UserContext'
@@ -19,8 +19,155 @@ const TIERS = [
   { key: 'champ', label: 'Championships' },
 ]
 
+function formatRiderName(name: string): string {
+  if (!name) return ''
+  return name.split(' ').map(w =>
+    w === w.toUpperCase() && w.length > 1 ? w.charAt(0) + w.slice(1).toLowerCase() : w
+  ).join(' ')
+}
+
+function riderColor(name: string): string {
+  const PALETTE = ['#1a3a8c', '#00594a', '#c0392b', '#9a8430', '#4527a0', '#00838f', '#6d4c41', '#1a4db3']
+  let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) & 0xffff
+  return PALETTE[h % PALETTE.length]
+}
+
+function riderInitials(name: string) {
+  return name.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+}
+
+// ── Riders Section ────────────────────────────────────────────────────────────
+
+interface RiderRow {
+  rider_name: string
+  team_name: string | null
+  nationality: string | null
+  image_url: string | null
+}
+
+function RidersSection() {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<RiderRow[]>([])
+  const [featured, setFeatured] = useState<RiderRow[]>([])
+  const [searching, setSearching] = useState(false)
+  const [label, setLabel] = useState('Featured Riders')
+
+  useEffect(() => {
+    // Load featured riders from app_config
+    supabase.from('app_config').select('key,value').eq('key', 'featured_riders').maybeSingle()
+      .then(async ({ data }) => {
+        const names: string[] = Array.isArray(data?.value) ? data.value : []
+        if (!names.length) return
+        const { data: rows } = await supabase.from('startlists')
+          .select('rider_name,team_name,nationality,image_url')
+          .in('rider_name', names)
+          .order('year', { ascending: false })
+          .limit(100)
+        // Deduplicate, prefer rows with images
+        const seen = new Map<string, RiderRow>()
+        ;(rows || []).forEach((r: any) => {
+          const key = r.rider_name
+          const prev = seen.get(key)
+          if (!prev || (r.image_url && r.image_url !== 'none' && (!prev.image_url || prev.image_url === 'none'))) {
+            seen.set(key, r)
+          }
+        })
+        setFeatured(names.map(n => seen.get(n)).filter(Boolean) as RiderRow[])
+      })
+  }, [])
+
+  useEffect(() => {
+    if (query.length < 2) { setResults([]); setLabel('Featured Riders'); return }
+    const timer = setTimeout(async () => {
+      setSearching(true)
+      const { data } = await supabase.from('startlists')
+        .select('rider_name,team_name,nationality,image_url')
+        .ilike('rider_name', `%${query}%`)
+        .order('year', { ascending: false })
+        .limit(100)
+      // Deduplicate
+      const seen = new Map<string, RiderRow>()
+      ;(data || []).forEach((r: any) => {
+        const key = r.rider_name
+        const prev = seen.get(key)
+        if (!prev || (r.image_url && r.image_url !== 'none' && (!prev.image_url || prev.image_url === 'none'))) {
+          seen.set(key, r)
+        }
+      })
+      const unique = Array.from(seen.values()).slice(0, 30)
+      setResults(unique)
+      setLabel(`${unique.length} result${unique.length !== 1 ? 's' : ''}`)
+      setSearching(false)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [query])
+
+  const displayList = query.length >= 2 ? results : featured
+
+  return (
+    <div>
+      <div style={{ padding: '22px 40px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 20 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 3, marginBottom: 4 }}>Rider Database</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>Search thousands of professional cyclists.</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search riders…"
+            style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', color: 'var(--fg)', padding: '8px 14px', fontSize: 13, width: 220, outline: 'none' }}
+          />
+        </div>
+      </div>
+
+      <div style={{ padding: '28px 40px' }}>
+        <div style={{ fontSize: 11, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 18 }}>
+          {searching ? 'Searching…' : label}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 16 }}>
+          {displayList.map(r => {
+            const hasImg = r.image_url && r.image_url !== 'none'
+            const col = riderColor(r.rider_name)
+            const ini = riderInitials(r.rider_name)
+            return (
+              <Link key={r.rider_name} href={`/riders/${encodeURIComponent(r.rider_name)}`}
+                style={{ textDecoration: 'none', display: 'block' }}>
+                <div style={{ aspectRatio: '2/3', background: col, overflow: 'hidden', position: 'relative', marginBottom: 8 }}>
+                  {hasImg ? (
+                    <img src={r.image_url!} alt={formatRiderName(r.rider_name)}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
+                  ) : (
+                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: '#fff' }}>
+                      {ini}
+                    </div>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--fg)', lineHeight: 1.3, marginBottom: 2 }}>
+                  {formatRiderName(r.rider_name)}
+                </div>
+                {r.team_name && (
+                  <div style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {r.team_name}
+                  </div>
+                )}
+              </Link>
+            )
+          })}
+          {!searching && query.length >= 2 && results.length === 0 && (
+            <div style={{ gridColumn: '1/-1', color: 'var(--muted)', fontSize: 12 }}>No riders found for "{query}".</div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main RaceGrid ─────────────────────────────────────────────────────────────
+
 export default function RaceGrid({ races, sgLabels, sgClass }: Props) {
   const { user, isLogged, watchlist } = useUser()
+  const [discoverSection, setDiscoverSection] = useState<'races' | 'riders'>('races')
   const [tier, setTier] = useState('all')
   const [tab, setTab] = useState('all')
   const [filterShow, setFilterShow] = useState('all')
@@ -49,7 +196,7 @@ export default function RaceGrid({ races, sgLabels, sgClass }: Props) {
       if (filterShow === 'logged' && !isLogged(r.slug)) return false
       if (filterShow === 'unlogged' && isLogged(r.slug)) return false
       if (filterShow === 'watchlist' && !watchlist.includes(r.slug)) return false
-      if (search && !r.race_name.toLowerCase().includes(search.toLowerCase()) && !r.country.toLowerCase().includes(search.toLowerCase())) return false
+      if (search && !r.race_name.toLowerCase().includes(search.toLowerCase()) && !(r.country || '').toLowerCase().includes(search.toLowerCase())) return false
       return true
     })
   }, [races, tier, tab, filterShow, search, isLogged, watchlist])
@@ -58,7 +205,6 @@ export default function RaceGrid({ races, sgLabels, sgClass }: Props) {
     e.preventDefault()
     e.stopPropagation()
     if (!user) { window.location.href = '/login'; return }
-    // Load available years if not cached
     let years = yearsCache[race.slug]
     if (!years) {
       const { data } = await supabase.from('race_results').select('year').eq('slug', race.slug).order('year', { ascending: false })
@@ -70,55 +216,71 @@ export default function RaceGrid({ races, sgLabels, sgClass }: Props) {
 
   return (
     <div>
-      {/* Tier bar */}
-      <div className="tier-bar">
-        {TIERS.map(t => (
-          <button key={t.key} className={`tier-btn${tier === t.key ? ' active' : ''}`}
-            onClick={() => { setTier(t.key); setTab('all') }}>{t.label}</button>
-        ))}
+      {/* Discover sub-tabs: Races / Riders */}
+      <div className="disc-subtabs">
+        <button className={`disc-subtab${discoverSection === 'races' ? ' active' : ''}`}
+          onClick={() => setDiscoverSection('races')}>Races</button>
+        <button className={`disc-subtab${discoverSection === 'riders' ? ' active' : ''}`}
+          onClick={() => setDiscoverSection('riders')}>Riders</button>
       </div>
 
-      {/* Type tabs */}
-      {typeTabsForTier.length > 0 && (
-        <div className="tabs">
-          <div className={`tab${tab === 'all' ? ' active' : ''}`} onClick={() => setTab('all')}>All</div>
-          {typeTabsForTier.map(t => (
-            <div key={t} className={`tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>{t}</div>
-          ))}
-        </div>
+      {/* Riders section */}
+      {discoverSection === 'riders' && <RidersSection />}
+
+      {/* Races section */}
+      {discoverSection === 'races' && (
+        <>
+          {/* Tier bar */}
+          <div className="tier-bar">
+            {TIERS.map(t => (
+              <button key={t.key} className={`tier-btn${tier === t.key ? ' active' : ''}`}
+                onClick={() => { setTier(t.key); setTab('all') }}>{t.label}</button>
+            ))}
+          </div>
+
+          {/* Type tabs */}
+          {typeTabsForTier.length > 0 && (
+            <div className="tabs">
+              <div className={`tab${tab === 'all' ? ' active' : ''}`} onClick={() => setTab('all')}>All</div>
+              {typeTabsForTier.map(t => (
+                <div key={t} className={`tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>{t}</div>
+              ))}
+            </div>
+          )}
+
+          {/* Filter bar */}
+          <div className="fbar">
+            <span className="fl">Show:</span>
+            {[['all', 'All'], ['logged', 'Logged'], ['unlogged', 'Unlogged'], ['watchlist', 'Watchlist']].map(([v, l]) => (
+              <button key={v} className={`fb${filterShow === v ? ' active' : ''}`} onClick={() => setFilterShow(v)}>{l}</button>
+            ))}
+          </div>
+
+          {/* Search */}
+          <div className="search-wrap-disc">
+            <input className="search-disc" type="text" placeholder="Search races…"
+              value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+
+          {/* Grid + sidebar */}
+          <div className="main-layout">
+            <div className="main-content">
+              {filtered.length === 0
+                ? <div className="empty">No races match your search.</div>
+                : <div className="race-grid">
+                    {filtered.map(race => (
+                      <RaceCard key={race.slug} race={race} sgLabels={sgLabels} sgClass={sgClass}
+                        onLog={e => openLogModal(race, e)} />
+                    ))}
+                  </div>
+              }
+            </div>
+            <div className="sidebar">
+              <RecentActivitySidebar />
+            </div>
+          </div>
+        </>
       )}
-
-      {/* Filter bar */}
-      <div className="fbar">
-        <span className="fl">Show:</span>
-        {[['all', 'All'], ['logged', 'Logged'], ['unlogged', 'Unlogged'], ['watchlist', 'Watchlist']].map(([v, l]) => (
-          <button key={v} className={`fb${filterShow === v ? ' active' : ''}`} onClick={() => setFilterShow(v)}>{l}</button>
-        ))}
-      </div>
-
-      {/* Search */}
-      <div className="search-wrap-disc">
-        <input className="search-disc" type="text" placeholder="Search races…"
-          value={search} onChange={e => setSearch(e.target.value)} />
-      </div>
-
-      {/* Grid */}
-      <div className="main-layout">
-        <div className="main-content">
-          {filtered.length === 0
-            ? <div className="empty">No races match your search.</div>
-            : <div className="race-grid">
-                {filtered.map(race => (
-                  <RaceCard key={race.slug} race={race} sgLabels={sgLabels} sgClass={sgClass}
-                    onLog={e => openLogModal(race, e)} />
-                ))}
-              </div>
-          }
-        </div>
-        <div className="sidebar">
-          <RecentActivitySidebar />
-        </div>
-      </div>
 
       {logModal && (
         <LogRaceModal
@@ -161,8 +323,7 @@ function RaceCard({ race, sgLabels, sgClass, onLog }: {
         {race.logo_url && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px 8px 22px' }}>
             <img src={race.logo_url} alt={race.race_name}
-              style={{ maxWidth: '80%', maxHeight: '70%', objectFit: 'contain', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,.5))' }}
-              onError={e => { (e.target as HTMLImageElement).parentElement!.style.display = 'none' }} />
+              style={{ maxWidth: '80%', maxHeight: '70%', objectFit: 'contain', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,.5))' }} />
           </div>
         )}
       </div>
@@ -199,17 +360,27 @@ function RaceCard({ race, sgLabels, sgClass, onLog }: {
 
 function RecentActivitySidebar() {
   const { user, logs } = useUser()
-  const [races, setRaces] = useState<Record<string, any>>({})
+  const [raceNames, setRaceNames] = useState<Record<string, string>>({})
+  const [raceGradients, setRaceGradients] = useState<Record<string, string>>({})
 
-  useMemo(() => {
-    const slugs = Object.keys(logs).slice(0, 10)
-    if (!slugs.length) return
-    supabase.from('races').select('slug,race_name,gradient').in('slug', slugs).then(({ data }) => {
-      const map: Record<string, any> = {}
-      ;(data || []).forEach((r: any) => { map[r.slug] = r })
-      setRaces(map)
-    })
+  const recent = useMemo(() => {
+    return Object.values(logs).flat()
+      .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 8) as any[]
   }, [logs])
+
+  useEffect(() => {
+    const slugs = [...new Set(recent.map(l => l.slug))]
+    if (!slugs.length) return
+    supabase.from('races').select('slug,race_name,gradient').in('slug', slugs)
+      .then(({ data }) => {
+        const names: Record<string, string> = {}
+        const gradients: Record<string, string> = {}
+        ;(data || []).forEach((r: any) => { names[r.slug] = r.race_name; gradients[r.slug] = r.gradient })
+        setRaceNames(names)
+        setRaceGradients(gradients)
+      })
+  }, [recent])
 
   if (!user) return (
     <div className="empty-log">
@@ -217,25 +388,23 @@ function RecentActivitySidebar() {
     </div>
   )
 
-  const recent = Object.entries(logs)
-    .flatMap(([slug, entries]) => entries.map(e => ({ ...e, slug })))
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, 8)
-
   if (!recent.length) return <div className="empty-log">Your logged races will appear here.</div>
 
   return (
     <div>
-      {recent.map(log => {
-        const r = races[log.slug]
-        return (
-          <Link key={log.id} href={`/races/${log.slug}/${log.year}`} className="sle" style={{ textDecoration: 'none', display: 'block' }}>
-            <div className="sle-d">{log.year}</div>
-            <div className="sle-name">{r?.race_name || log.slug}</div>
-            {log.rating && <div className="sle-yr">★ {log.rating}</div>}
-          </Link>
-        )
-      })}
+      {recent.map((log: any) => (
+        <Link key={log.id} href={`/races/${log.slug}/${log.year}`} className="sle" style={{ textDecoration: 'none', display: 'block' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ width: 4, height: 32, background: raceGradients[log.slug] || 'var(--border)', flexShrink: 0, borderRadius: 1 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="sle-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {raceNames[log.slug] || log.slug}
+              </div>
+              <div className="sle-yr">{log.year}{log.rating ? ` · ★ ${log.rating.toFixed(1)}` : ''}</div>
+            </div>
+          </div>
+        </Link>
+      ))}
     </div>
   )
 }
