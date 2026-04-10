@@ -184,16 +184,23 @@ export default function ProfilePage() {
 
         <div className="profile-stat-grid">
           {[
-            [logs.length, 'Races'],
-            [liveCount, 'Live'],
-            [avg, 'Avg ★'],
-            [followers, 'Followers'],
-            [following, 'Following'],
-          ].map(([n, l]) => (
-            <div key={String(l)} className="profile-stat-cell">
-              <div className="profile-stat-n">{n}</div>
-              <div className="profile-stat-l">{l}</div>
-            </div>
+            [logs.length, 'Races', null],
+            [liveCount, 'Live', null],
+            [avg, 'Avg ★', null],
+            [followers, 'Followers', `/profile/${displayProfile?.handle}/followers`],
+            [following, 'Following', `/profile/${displayProfile?.handle}/following`],
+          ].map(([n, l, href]) => (
+            href ? (
+              <Link key={String(l)} href={href as string} className="profile-stat-cell clickable" style={{ textDecoration: 'none' }}>
+                <div className="profile-stat-n">{n}</div>
+                <div className="profile-stat-l">{l}</div>
+              </Link>
+            ) : (
+              <div key={String(l)} className="profile-stat-cell">
+                <div className="profile-stat-n">{n}</div>
+                <div className="profile-stat-l">{l}</div>
+              </div>
+            )
           ))}
         </div>
 
