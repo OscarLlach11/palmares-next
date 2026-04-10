@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import LogEditionButton from '@/app/components/LogEditionButton'
+import EditionComments from '@/app/components/EditionComments'
 
 export const revalidate = 3600
 
@@ -133,6 +134,8 @@ export default async function EditionPage({ params }: { params: { slug: string; 
               })}
             </div>
           )}
+
+          <EditionComments slug={params.slug} year={year} />
         </div>
 
         {/* Sidebar */}
