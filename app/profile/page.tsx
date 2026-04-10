@@ -136,10 +136,13 @@ export default function ProfilePage() {
   const liveCount = logs.filter(l => l.watched_live).length
   const initials = (profile?.display_name || 'C').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
 
-  // Rating distribution
+  // Rating distribution (0.5–5 in 0.5 steps)
   const buckets: Record<string, number> = {}
-  for (let v = 1; v <= 10; v++) buckets[v] = 0
-  rated.forEach(l => { const k = Math.round(l.rating || 0); if (buckets[k] !== undefined) buckets[k]++ })
+  for (let v = 0.5; v <= 5.0; v += 0.5) buckets[v.toFixed(1)] = 0
+  rated.forEach(l => {
+    const k = (Math.round((l.rating || 0) * 2) / 2).toFixed(1)
+    if (buckets[k] !== undefined) buckets[k]++
+  })
   const maxBucket = Math.max(...Object.values(buckets), 1)
 
   // By year
