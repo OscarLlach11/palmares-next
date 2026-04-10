@@ -132,6 +132,20 @@ export default function ReviewPage() {
     setComments(prev => [...prev, data])
     setCommentText('')
     setPosting(false)
+
+    // Fire notification to review owner (if not own review)
+    if (reviewerProfile && reviewerProfile.user_id !== user.id) {
+      supabase.from('notifications').insert({
+        user_id: reviewerProfile.user_id,
+        type: 'comment',
+        actor_id: user.id,
+        actor_handle: profile?.handle || '',
+        actor_name: profile?.display_name || 'Someone',
+        review_key: reviewKey,
+        comment_text: commentText.trim().slice(0, 100),
+        read: false,
+      }).then(() => {})
+    }
   }
 
   async function deleteComment(id: string) {
