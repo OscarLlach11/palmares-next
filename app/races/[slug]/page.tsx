@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import EditionLink from './EditionLink'
 
 export const revalidate = 3600
 
@@ -107,14 +108,7 @@ export default async function RacePage({ params }: { params: { slug: string } })
           {years.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               {years.map(year => (
-                <Link key={year} href={`/races/${race.slug}/${year}`}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--card-bg)', border: '1px solid var(--border)', textDecoration: 'none', transition: 'border-color .15s' }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--gold-dim)')}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
-                >
-                  <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 2 }}>{year}</span>
-                  <span style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: 2 }}>View Edition →</span>
-                </Link>
+                <EditionLink key={year} href={`/races/${race.slug}/${year}`} year={year} />
               ))}
             </div>
           ) : (
