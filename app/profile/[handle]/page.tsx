@@ -39,6 +39,7 @@ export default function UserProfilePage() {
   const [following, setFollowing] = useState(0)
   const [riderImages, setRiderImages] = useState<Record<string, string>>({})
   const [favRace, setFavRace] = useState<any>(null)
+  const [stageCount, setStageCount] = useState(0)
 
   const isMe = user && (myProfile?.handle === handle || user.id === handle)
   const isFollowing = profile ? followingIds.has(profile.user_id) : false
@@ -55,17 +56,19 @@ export default function UserProfilePage() {
     if (!prof) { setNotFound(true); setLoading(false); return }
     setProfile(prof)
 
-    const [logsRes, racesRes, fersRes, fingRes] = await Promise.all([
+    const [logsRes, racesRes, fersRes, fingRes, stageCountRes] = await Promise.all([
       supabase.from('race_logs').select('id,slug,year,rating,review,watched_live,date_watched,created_at').eq('user_id', prof.user_id).order('created_at', { ascending: false }),
       supabase.from('races').select('slug,race_name,gradient,flag,country,logo_url'),
       supabase.from('follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', prof.user_id),
       supabase.from('follows').select('following_id', { count: 'exact', head: true }).eq('follower_id', prof.user_id),
+      supabase.from('stage_logs').select('id', { count: 'exact', head: true }).eq('user_id', prof.user_id),
     ])
 
     const allLogs = logsRes.data || []
     setLogs(allLogs)
     setFollowers(fersRes.count || 0)
     setFollowing(fingRes.count || 0)
+    setStageCount(stageCountRes.count || 0)
 
     const raceMap: Record<string, any> = {}
     ;(racesRes.data || []).forEach((r: any) => { raceMap[r.slug] = r })
@@ -170,6 +173,7 @@ export default function UserProfilePage() {
             [logs.length, 'Races', null],
             [liveCount, 'Live', null],
             [avg, 'Avg ★', null],
+            [stageCount, 'Stages', null],
             [followers, 'Followers', `/profile/${profile?.handle}/followers`],
             [following, 'Following', `/profile/${profile?.handle}/following`],
           ].map(([n, l, href]) => (
