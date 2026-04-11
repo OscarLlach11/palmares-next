@@ -1,6 +1,6 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useEffect, useState, Suspense } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useUser } from '@/app/context/UserContext'
@@ -49,16 +49,17 @@ interface ReviewComment {
   created_at: string
 }
 
-export default function ReviewPage() {
+function ReviewPageInner() {
   const params = useParams()
+  const searchParams = useSearchParams()
   const router = useRouter()
   const { user, profile } = useUser()
 
-  // params: handle, slug, year, n (optional)
+  // params: handle, slug, year — n is optional query param (?n=2)
   const handle = params.handle as string
   const slug = params.slug as string
   const year = parseInt(params.year as string)
-  const n = params.n ? parseInt(params.n as string) : 1
+  const n = parseInt(searchParams.get('n') || '1')
 
   const [loading, setLoading] = useState(true)
   const [race, setRace] = useState<any>(null)
@@ -280,5 +281,13 @@ export default function ReviewPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function ReviewPageWrapper() {
+  return (
+    <Suspense fallback={<div style={{ padding: 40, color: 'var(--muted)' }}>Loading…</div>}>
+      <ReviewPageInner />
+    </Suspense>
   )
 }
