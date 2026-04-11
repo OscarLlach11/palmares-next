@@ -21,7 +21,7 @@ type FeedItem = {
 }
 
 export default function DiscoverHero({ globalLogCount, globalRatingCount, raceCount }: Props) {
-  const { user, logs } = useUser()
+  const { user, logs, followingIds } = useUser()
   const [feed, setFeed] = useState<FeedItem[]>([])
 
   // User-specific stats derived from context
@@ -32,10 +32,12 @@ export default function DiscoverHero({ globalLogCount, globalRatingCount, raceCo
   const displayLogCount = user ? userLogCount : globalLogCount
   const displayRatingCount = user ? userRatingCount : globalRatingCount
 
+  const followingCount = followingIds.size
+
   useEffect(() => {
     if (!user) return
     loadFeed(user.id)
-  }, [user])
+  }, [user?.id, followingCount])
 
   async function loadFeed(uid: string) {
     const { data: followData } = await supabase
