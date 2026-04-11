@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useUser } from '@/app/context/UserContext'
+import { useToast } from '@/app/context/ToastContext'
 import LogRaceModal from '@/app/components/LogRaceModal'
 
 function fmtDate(d: string): string {
@@ -18,6 +19,7 @@ type Race = { slug: string; race_name: string; gradient: string; flag: string; c
 
 export default function LogPage() {
   const { user, logs: contextLogs, refreshLogs } = useUser()
+  const { showToast } = useToast()
   const [loading, setLoading] = useState(true)
   const [races, setRaces] = useState<Record<string, Race>>({})
   const [filterType, setFilterType] = useState('')
@@ -63,6 +65,7 @@ export default function LogPage() {
     await refreshLogs()
     setClearing(false)
     setConfirmClear(false)
+    showToast('All logs cleared.')
   }
 
   if (loading) return <div style={{ padding: 40, color: 'var(--muted)' }}>Loading…</div>
