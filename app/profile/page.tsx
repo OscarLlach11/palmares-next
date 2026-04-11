@@ -62,22 +62,29 @@ export default function ProfilePage() {
   const [riderImages, setRiderImages] = useState<Record<string, string>>({})
   const [favRace, setFavRace] = useState<Race | null>(null)
   const [editProfileOpen, setEditProfileOpen] = useState(false)
+  const [stageCount, setStageCount] = useState(0)
+  const [stageLogs, setStageLogs] = useState<any[]>([])
 
   useEffect(() => {
     if (authLoading) return
     if (!user) { setLoading(false); return }
     loadAll(user.id)
-  }, [user, authLoading])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, authLoading])
 
   async function loadAll(uid: string) {
-    const [profRes, logsRes, racesRes] = await Promise.all([
+    const [profRes, logsRes, racesRes, stageCountRes, stageLogsRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('user_id', uid).maybeSingle(),
       supabase.from('race_logs').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
       supabase.from('races').select('slug,race_name,gradient,flag,country,logo_url'),
+      supabase.from('stage_logs').select('id', { count: 'exact', head: true }).eq('user_id', uid),
+      supabase.from('stage_logs').select('id,race_slug,year,stage_num,rating,review,watched_live,date_watched,created_at').eq('user_id', uid).order('created_at', { ascending: false }).limit(20),
     ])
     const prof = profRes.data as Profile | null
     const allLogs = (logsRes.data || []) as RaceLog[]
     const allRaces = (racesRes.data || []) as Race[]
+    setStageCount(stageCountRes.count || 0)
+    setStageLogs(stageLogsRes.data || [])
     setLocalProfile(prof)
     setLogs(allLogs)
     setRaces(allRaces)
@@ -159,8 +166,13 @@ export default function ProfilePage() {
   })
   const sortedCountries = Object.entries(countryCounts).sort((a, b) => b[1] - a[1])
 
-  // Recent activity
-  const recent = logs.slice(0, 5)
+  // Recent activity — merge race logs and stage logs, sort by created_at
+  const recentActivity = [
+    ...logs.map(l => ({ ...l, type: 'race' as const })),
+    ...stageLogs.map(l => ({ ...l, slug: l.race_slug, type: 'stage' as const })),
+  ]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 8)
 
   // Recent reviews
   const withReviews = logs.filter(l => l.review?.trim()).slice(0, 5)
@@ -187,6 +199,7 @@ export default function ProfilePage() {
             [logs.length, 'Races', null],
             [liveCount, 'Live', null],
             [avg, 'Avg ★', null],
+            [stageCount, 'Stages', null],
             [followers, 'Followers', `/profile/${displayProfile?.handle}/followers`],
             [following, 'Following', `/profile/${displayProfile?.handle}/following`],
           ].map(([n, l, href]) => (
@@ -309,15 +322,27 @@ export default function ProfilePage() {
         ) : <div style={{ color: 'var(--muted)', fontSize: 12 }}>Log some races to see countries.</div>}
 
         <div className="profile-section-title" style={{ marginTop: 28 }}>Recent Activity</div>
-        {recent.length > 0 ? recent.map(l => {
+        {recentActivity.length > 0 ? recentActivity.map(l => {
           const r = races.find(x => x.slug === l.slug)
+          const href = l.type === 'stage'
+            ? `/races/${l.slug}/${l.year}/stages/${(l as any).stage_num}`
+            : `/races/${l.slug}/${l.year}`
           return (
-            <Link key={l.id} href={`/races/${l.slug}/${l.year}`} style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer', textDecoration: 'none' }}>
+            <Link key={l.id} href={href} style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--border)', textDecoration: 'none' }}>
               <div style={{ width: 40, height: 40, flexShrink: 0, background: r?.gradient || 'var(--border)', borderRadius: 2 }} />
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg)' }}>{r?.race_name || l.slug} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>{l.year}</span></div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg)' }}>
+                  {r?.race_name || l.slug}
+                  {l.type === 'stage' && <span style={{ fontWeight: 400, color: 'var(--gold)', fontSize: 11, marginLeft: 6 }}>Stage {(l as any).stage_num}</span>}
+                  <span style={{ fontWeight: 400, color: 'var(--muted)', marginLeft: 4 }}>{l.year}</span>
+                </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                  {[l.date_watched ? fmtDate(l.date_watched) : '', l.watched_live ? '🔴 Live' : '', l.rating ? `★ ${l.rating}` : ''].filter(Boolean).join(' · ')}
+                  {[
+                    l.date_watched ? fmtDate(l.date_watched) : '',
+                    l.watched_live ? '🔴 Live' : '',
+                    l.rating ? `★ ${l.rating}` : '',
+                    l.type === 'stage' ? 'stage log' : '',
+                  ].filter(Boolean).join(' · ')}
                 </div>
               </div>
             </Link>
