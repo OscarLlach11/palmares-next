@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useUser } from '@/app/context/UserContext'
+import { useToast } from '@/app/context/ToastContext'
 
 interface Props {
   slug: string
@@ -44,6 +45,7 @@ function StarDisplay({ rating, size = 20 }: { rating: number; size?: number }) {
 
 export default function LogRaceModal({ slug, raceName, gradient, availYears, onClose, initialYear }: Props) {
   const { user, getLog, addLog, updateLog, removeLog } = useUser()
+  const { showToast } = useToast()
   const existingLogs = getLog(slug)
 
   const [year, setYear] = useState<number>(initialYear || availYears[0] || new Date().getFullYear())
@@ -103,10 +105,12 @@ export default function LogRaceModal({ slug, raceName, gradient, availYears, onC
       const { data, error: err } = await supabase.from('race_logs').update(row).eq('id', editingId).select().single()
       if (err) { setError(err.message); setSaving(false); return }
       updateLog(data)
+      showToast('Log updated!')
     } else {
       const { data, error: err } = await supabase.from('race_logs').insert(row).select().single()
       if (err) { setError(err.message); setSaving(false); return }
       addLog(data)
+      showToast('Race logged!')
     }
 
     setSaving(false)
@@ -118,11 +122,10 @@ export default function LogRaceModal({ slug, raceName, gradient, availYears, onC
     const { error: err } = await supabase.from('race_logs').delete().eq('id', id)
     if (err) { setError(err.message); return }
     removeLog(id, slug)
+    showToast('Log deleted.', 'error')
     if (existingLogs.length <= 1) onClose()
     else setView('list')
   }
-
-  const currentYearLogs = existingLogs.filter(l => l.year === year)
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.9)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(8px)' }}
@@ -142,7 +145,7 @@ export default function LogRaceModal({ slug, raceName, gradient, availYears, onC
 
         <div style={{ padding: 22 }}>
 
-          {/* List view — show existing logs */}
+          {/* List view */}
           {view === 'list' && existingLogs.length > 0 && (
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
