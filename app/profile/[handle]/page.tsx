@@ -40,6 +40,7 @@ export default function UserProfilePage() {
   const [riderImages, setRiderImages] = useState<Record<string, string>>({})
   const [favRace, setFavRace] = useState<any>(null)
   const [stageCount, setStageCount] = useState(0)
+  const [logModal, setLogModal] = useState<null | 'all' | 'live'>(null)
 
   const isMe = user && (myProfile?.handle === handle || user.id === handle)
   const isFollowing = profile ? followingIds.has(profile.user_id) : false
@@ -138,6 +139,7 @@ export default function UserProfilePage() {
   const withReviews = logs.filter((l: any) => l.review?.trim()).slice(0, 5)
 
   return (
+    <>
     <div className="profile-layout">
       {/* Column 1: stats */}
       <div className="profile-sidebar">
@@ -169,25 +171,33 @@ export default function UserProfilePage() {
 
         {/* Stats grid */}
         <div className="profile-stat-grid">
+          <button className="profile-stat-cell clickable" onClick={() => setLogModal('all')}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'center', padding: 0 }}>
+            <div className="profile-stat-n">{logs.length}</div>
+            <div className="profile-stat-l">Races</div>
+          </button>
+          <button className="profile-stat-cell clickable" onClick={() => setLogModal('live')}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'center', padding: 0 }}>
+            <div className="profile-stat-n">{liveCount}</div>
+            <div className="profile-stat-l">Live</div>
+          </button>
           {[
-            [logs.length, 'Races', null],
-            [liveCount, 'Live', null],
             [avg, 'Avg ★', null],
             [stageCount, 'Stages', null],
+          ].map(([n, l]) => (
+            <div key={String(l)} className="profile-stat-cell">
+              <div className="profile-stat-n">{n}</div>
+              <div className="profile-stat-l">{l}</div>
+            </div>
+          ))}
+          {[
             [followers, 'Followers', `/profile/${profile?.handle}/followers`],
             [following, 'Following', `/profile/${profile?.handle}/following`],
           ].map(([n, l, href]) => (
-            href ? (
-              <Link key={String(l)} href={href as string} className="profile-stat-cell clickable" style={{ textDecoration: 'none' }}>
-                <div className="profile-stat-n">{n}</div>
-                <div className="profile-stat-l">{l}</div>
-              </Link>
-            ) : (
-              <div key={String(l)} className="profile-stat-cell">
-                <div className="profile-stat-n">{n}</div>
-                <div className="profile-stat-l">{l}</div>
-              </div>
-            )
+            <Link key={String(l)} href={href as string} className="profile-stat-cell clickable" style={{ textDecoration: 'none' }}>
+              <div className="profile-stat-n">{n}</div>
+              <div className="profile-stat-l">{l}</div>
+            </Link>
           ))}
         </div>
 
@@ -310,5 +320,79 @@ export default function UserProfilePage() {
         }) : <div style={{ color: 'var(--muted)', fontSize: 12 }}>No reviews yet.</div>}
       </div>
     </div>
+
+    {/* Log modal */}
+    {logModal && (() => {
+      const modalLogs = logModal === 'live' ? logs.filter((l: any) => l.watched_live) : logs
+      const title = logModal === 'live'
+        ? `${profile?.display_name || handle}'s Live Races`
+        : `${profile?.display_name || handle}'s Race Log`
+      return (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={() => setLogModal(null)}
+        >
+          <div
+            style={{ background: 'var(--bg)', border: '1px solid var(--border)', width: '100%', maxWidth: 520, maxHeight: '80vh', display: 'flex', flexDirection: 'column', borderRadius: 2 }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 2 }}>{title}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{modalLogs.length} race{modalLogs.length !== 1 ? 's' : ''}</span>
+                <button onClick={() => setLogModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0 }}>✕</button>
+              </div>
+            </div>
+            {/* Toggle */}
+            <div style={{ display: 'flex', gap: 8, padding: '10px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <button onClick={() => setLogModal('all')}
+                style={{ fontSize: 10, padding: '4px 12px', cursor: 'pointer', background: logModal === 'all' ? 'var(--gold)' : 'var(--card-bg)', color: logModal === 'all' ? '#000' : 'var(--muted)', border: '1px solid var(--border)', letterSpacing: 1 }}>
+                ALL
+              </button>
+              <button onClick={() => setLogModal('live')}
+                style={{ fontSize: 10, padding: '4px 12px', cursor: 'pointer', background: logModal === 'live' ? 'var(--gold)' : 'var(--card-bg)', color: logModal === 'live' ? '#000' : 'var(--muted)', border: '1px solid var(--border)', letterSpacing: 1 }}>
+                🔴 LIVE ONLY
+              </button>
+            </div>
+            {/* List */}
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {modalLogs.length === 0 ? (
+                <div style={{ padding: 24, color: 'var(--muted)', fontSize: 12, textAlign: 'center' }}>No races logged yet.</div>
+              ) : modalLogs.map((l: any) => {
+                const r = races[l.slug]
+                return (
+                  <Link
+                    key={l.id}
+                    href={`/races/${l.slug}/${l.year}`}
+                    onClick={() => setLogModal(null)}
+                    style={{ display: 'flex', gap: 12, padding: '10px 18px', borderBottom: '1px solid var(--border)', textDecoration: 'none', alignItems: 'center' }}
+                  >
+                    <div style={{ width: 36, height: 36, flexShrink: 0, background: r?.gradient || 'var(--border)', borderRadius: 2 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {r?.race_name || l.slug}
+                        <span style={{ fontWeight: 400, color: 'var(--muted)', marginLeft: 6 }}>{l.year}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                        {[
+                          l.watched_live ? '🔴 Live' : '',
+                          l.rating ? `★ ${l.rating}` : '',
+                          l.date_watched ? fmtDate(l.date_watched) : '',
+                        ].filter(Boolean).join(' · ')}
+                      </div>
+                    </div>
+                    {l.review?.trim() && (
+                      <div style={{ fontSize: 10, color: 'var(--gold)', flexShrink: 0 }}>✍</div>
+                    )}
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )
+    })()}
+    </>
   )
 }
