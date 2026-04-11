@@ -3,6 +3,7 @@ import './globals.css'
 import Nav from './components/Nav'
 import MobileNav from './components/MobileNav'
 import { UserProvider } from './context/UserContext'
+import { ToastProvider } from './context/ToastContext'
 
 export const metadata: Metadata = {
   title: 'PALMARÈS — Cycling Race Journal',
@@ -45,9 +46,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <UserProvider>
-          <Nav />
-          <main>{children}</main>
-          <MobileNav />
+          <ToastProvider>
+            <Nav />
+            <main>{children}</main>
+            <MobileNav />
+          </ToastProvider>
         </UserProvider>
       </body>
     </html>
