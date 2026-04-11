@@ -27,6 +27,8 @@ export default function LogPage() {
   const [openDD, setOpenDD] = useState('')
   const [editModal, setEditModal] = useState<{ slug: string; raceName: string; gradient: string; years: number[] } | null>(null)
   const [yearsCache, setYearsCache] = useState<Record<string, number[]>>({})
+  const [confirmClear, setConfirmClear] = useState(false)
+  const [clearing, setClearing] = useState(false)
 
   // Flatten context logs into a sorted array
   const allLogs: RaceLog[] = Object.values(contextLogs).flat() as RaceLog[]
@@ -54,6 +56,15 @@ export default function LogPage() {
     setEditModal({ slug, raceName: race.race_name, gradient: race.gradient || '#1a1a1a', years })
   }
 
+  async function confirmClearAll() {
+    if (!user) return
+    setClearing(true)
+    await supabase.from('race_logs').delete().eq('user_id', user.id)
+    await refreshLogs()
+    setClearing(false)
+    setConfirmClear(false)
+  }
+
   if (loading) return <div style={{ padding: 40, color: 'var(--muted)' }}>Loading…</div>
 
   if (!user) return (
@@ -70,13 +81,6 @@ export default function LogPage() {
   const avg = rated.length ? (rated.reduce((s, l) => s + (l.rating || 0), 0) / rated.length).toFixed(1) : '—'
   const liveCount = allLogs.filter(l => l.watched_live).length
   const distinctRaces = new Set(allLogs.map(l => l.slug)).size
-
-  // Country filter options
-  const countryCounts: Record<string, number> = {}
-  allLogs.forEach(l => {
-    const r = races[l.slug]
-    if (r?.country) countryCounts[r.country] = (countryCounts[r.country] || 0) + 1
-  })
 
   // Filter + sort
   let filtered = allLogs.filter(l => {
@@ -105,6 +109,7 @@ export default function LogPage() {
   const hasFilters = filterType || filterLive
 
   return (
+    <>
     <div onClick={() => setOpenDD('')}>
       {/* Hero */}
       <div className="hero" style={{ paddingBottom: 32 }}>
@@ -239,15 +244,60 @@ export default function LogPage() {
         })}
       </div>
 
-      {editModal && (
-        <LogRaceModal
-          slug={editModal.slug}
-          raceName={editModal.raceName}
-          gradient={editModal.gradient}
-          availYears={editModal.years}
-          onClose={() => { setEditModal(null); refreshLogs() }}
-        />
+      {/* Danger zone */}
+      {allLogs.length > 0 && (
+        <div style={{ padding: '40px 40px 60px', borderTop: '1px solid var(--border)', marginTop: 24 }}>
+          <div style={{ fontSize: 10, letterSpacing: 2, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 12 }}>Danger Zone</div>
+          <button
+            onClick={() => setConfirmClear(true)}
+            style={{ fontSize: 10, letterSpacing: 1, color: '#c0392b', background: 'none', border: '1px solid #c0392b44', padding: '7px 16px', cursor: 'pointer', textTransform: 'uppercase' }}>
+            Clear All Logs
+          </button>
+        </div>
       )}
     </div>
+
+    {/* Confirm clear modal */}
+    {confirmClear && (
+      <div
+        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        onClick={() => setConfirmClear(false)}
+      >
+        <div
+          style={{ background: 'var(--bg)', border: '1px solid #c0392b66', width: '100%', maxWidth: 400, padding: 32 }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 2, marginBottom: 12 }}>Clear All Logs?</div>
+          <p style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 24 }}>
+            This will permanently delete all <strong style={{ color: 'var(--fg)' }}>{allLogs.length} race log{allLogs.length !== 1 ? 's' : ''}</strong> from your journal. This cannot be undone.
+          </p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              onClick={() => setConfirmClear(false)}
+              className="bs"
+              style={{ flex: 1, fontSize: 10, padding: '9px 0' }}>
+              Cancel
+            </button>
+            <button
+              onClick={confirmClearAll}
+              disabled={clearing}
+              style={{ flex: 1, fontSize: 10, letterSpacing: 1, padding: '9px 0', background: '#c0392b', color: '#fff', border: 'none', cursor: clearing ? 'not-allowed' : 'pointer', opacity: clearing ? 0.6 : 1, textTransform: 'uppercase' }}>
+              {clearing ? 'Clearing…' : 'Yes, Delete All'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {editModal && (
+      <LogRaceModal
+        slug={editModal.slug}
+        raceName={editModal.raceName}
+        gradient={editModal.gradient}
+        availYears={editModal.years}
+        onClose={() => { setEditModal(null); refreshLogs() }}
+      />
+    )}
+    </>
   )
 }
