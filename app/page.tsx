@@ -77,25 +77,7 @@ type FeaturedRider = {
   image_url: string | null
 }
 
-function pickBestRow(rows: any[]): FeaturedRider {
-  const sorted = [...rows].sort((a, b) => {
-    const ai = a.image_url && a.image_url !== 'none' ? 1 : 0
-    const bi = b.image_url && b.image_url !== 'none' ? 1 : 0
-    if (bi !== ai) return bi - ai
-    return (b.year || 0) - (a.year || 0)
-  })
-  const best = sorted[0]
-  const latest = rows.reduce((a, b) => ((b.year || 0) > (a.year || 0) ? b : a), rows[0])
-  return {
-    rider_name: best.rider_name,
-    team_name: latest.team_name,
-    nationality: latest.nationality,
-    image_url: best.image_url && best.image_url !== 'none' ? best.image_url : null,
-  }
-}
-
 async function getFeaturedRiders(): Promise<FeaturedRider[]> {
-  // Get the ordered list of names from app_config
   const { data: configRow } = await supabase
     .from('app_config')
     .select('value')
@@ -108,22 +90,42 @@ async function getFeaturedRiders(): Promise<FeaturedRider[]> {
   const extractName = (e: any) => typeof e === 'object' ? (e?.name || '') : (e || '')
   const names: string[] = entries.map(extractName).filter(Boolean)
 
-  // Fetch each rider with exact ilike match ONLY — no fuzzy fallback.
-  // If a name doesn't match, we show a placeholder (no wrong riders).
   const results = await Promise.all(
     names.map(async (name): Promise<FeaturedRider> => {
-      const { data } = await supabase
-        .from('startlists')
-        .select('rider_name,team_name,nationality,image_url,year')
-        .ilike('rider_name', name)   // exact ilike: case-insensitive but full-string match
-        .order('year', { ascending: false })
-        .limit(20)
+      // Run two queries in parallel:
+      // 1. Most recent row with an actual image (not null, not 'none')
+      // 2. Most recent row overall (for team name — which is freshest in 2026)
+      const [withImageRes, latestRes] = await Promise.all([
+        supabase
+          .from('startlists')
+          .select('rider_name,team_name,nationality,image_url,year')
+          .ilike('rider_name', name)
+          .not('image_url', 'is', null)
+          .neq('image_url', 'none')
+          .order('year', { ascending: false })
+          .limit(1),
+        supabase
+          .from('startlists')
+          .select('rider_name,team_name,nationality,year')
+          .ilike('rider_name', name)
+          .order('year', { ascending: false })
+          .limit(1),
+      ])
 
-      if (data?.length) return pickBestRow(data)
+      const imageRow = withImageRes.data?.[0] || null
+      const latestRow = latestRes.data?.[0] || null
 
-      // No match — return placeholder using the configured name so at least
-      // the right name shows (no wrong rider substituted)
-      return { rider_name: name, team_name: null, nationality: null, image_url: null }
+      if (!latestRow && !imageRow) {
+        // Name not in DB at all — show placeholder
+        return { rider_name: name, team_name: null, nationality: null, image_url: null }
+      }
+
+      return {
+        rider_name: latestRow?.rider_name || imageRow?.rider_name || name,
+        team_name: latestRow?.team_name || null,         // freshest team
+        nationality: latestRow?.nationality || imageRow?.nationality || null,
+        image_url: imageRow?.image_url || null,          // best image (may be from older year)
+      }
     })
   )
 
