@@ -224,16 +224,31 @@ export default function ProfilePage() {
           </button>
         </div>
 
-        {/* Rating distribution */}
+        {/* Rating distribution — bars are clickable links to /log?rating=X */}
         <div style={{ marginTop: 24 }}>
           <div className="profile-section-title" style={{ fontSize: 13, marginBottom: 12 }}>Rating Distribution</div>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 60 }}>
-            {Object.entries(buckets).map(([v, cnt]) => (
-              <div key={v} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                <div style={{ width: '100%', background: 'var(--gold)', borderRadius: 2, height: maxBucket > 0 ? Math.max(cnt / maxBucket * 52, cnt > 0 ? 2 : 0) : 0 }} />
-                <div style={{ fontSize: 8, color: 'var(--muted)' }}>{v}</div>
-              </div>
-            ))}
+            {Object.entries(buckets).map(([v, cnt]) => {
+              const barH = maxBucket > 0 ? Math.max(cnt / maxBucket * 52, cnt > 0 ? 2 : 0) : 0
+              const inner = (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                  <div style={{ width: '100%', background: 'var(--gold)', borderRadius: 2, height: barH, opacity: cnt > 0 ? 1 : 0.15 }} />
+                  <div style={{ fontSize: 8, color: 'var(--muted)' }}>{v}</div>
+                </div>
+              )
+              return cnt > 0 ? (
+                <Link
+                  key={v}
+                  href={`/log?rating=${v}`}
+                  style={{ flex: 1, textDecoration: 'none', cursor: 'pointer' }}
+                  title={`${cnt} race${cnt !== 1 ? 's' : ''} rated ${v}`}
+                >
+                  {inner}
+                </Link>
+              ) : (
+                <div key={v} style={{ flex: 1 }}>{inner}</div>
+              )
+            })}
           </div>
         </div>
 
@@ -266,37 +281,34 @@ export default function ProfilePage() {
               const col = riderColor(name)
               const ini = riderInitials(name)
               return (
-                <div key={i} className="fav-rider-slot filled" style={{ position: 'relative' }}>
+                // FIX 1: fav riders now link to /riders/[name]
+                <Link key={i} href={`/riders/${encodeURIComponent(name)}`} className="fav-rider-slot filled" style={{ position: 'relative', textDecoration: 'none' }}>
                   {imgUrl
                     ? <img src={imgUrl} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
                     : <div style={{ width: '100%', height: '100%', background: col, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: '#fff' }}>{ini}</div>}
-                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', padding: '4px 5px', fontSize: 8, letterSpacing: 0.5, textTransform: 'uppercase', lineHeight: 1.2 }}>
+                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', padding: '4px 5px', fontSize: 8, letterSpacing: 0.5, textTransform: 'uppercase', lineHeight: 1.2, color: '#fff' }}>
                     {formatRiderName(name)}
                   </div>
-                </div>
+                </Link>
               )
             }
-            return (
-              <div key={i} className="fav-rider-slot" style={{ background: 'var(--card-bg)', border: '1px dashed var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                <div style={{ fontSize: 20, color: 'var(--border-light)' }}>+</div>
-                <div style={{ fontSize: 8, color: 'var(--muted)', letterSpacing: 1 }}>RIDER {i + 1}</div>
-              </div>
-            )
+            return <div key={i} className="fav-rider-slot" style={{ background: 'var(--card-bg)', border: '1px dashed var(--border)' }} />
           })}
         </div>
 
         <div className="profile-section-title" style={{ marginTop: 28 }}>Favourite Race</div>
         {favRace ? (
-          <div className="fav-race-card">
+          // FIX 2: fav race now links to the year-specific edition
+          <Link href={`/races/${favRace.slug}${displayProfile?.fav_race_year ? `/${displayProfile.fav_race_year}` : ''}`} className="fav-race-card" style={{ textDecoration: 'none' }}>
             <div className="fav-race-swatch" style={{ background: favRace.gradient }}>
               {favRace.logo_url && <img src={favRace.logo_url} alt={favRace.race_name} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 6 }} />}
             </div>
             <div className="fav-race-info">
               <div className="fav-race-name">{favRace.race_name}</div>
-              <div className="fav-race-year">{displayProfile?.fav_race_year} edition</div>
+              {displayProfile?.fav_race_year && <div className="fav-race-year">{displayProfile.fav_race_year} edition</div>}
               <div className="fav-race-label">★ All-time favourite</div>
             </div>
-          </div>
+          </Link>
         ) : (
           <div className="fav-race-card" style={{ cursor: 'default', borderStyle: 'dashed' }}>
             <div className="fav-race-swatch" style={{ background: 'var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: 'var(--border-light)' }}>★</div>
@@ -313,10 +325,22 @@ export default function ProfilePage() {
         {sortedCountries.length > 0 ? (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {sortedCountries.map(([country, cnt]) => (
-              <div key={country} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--card-bg)', border: '1px solid var(--border)', padding: '5px 10px', fontSize: 11, letterSpacing: 1 }}>
-                <span>{country}</span>
+              // FIX 3: country pills now link to /log?country=...
+              <Link
+                key={country}
+                href={`/log?country=${encodeURIComponent(country)}`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: 'var(--card-bg)', border: '1px solid var(--border)',
+                  padding: '5px 10px', fontSize: 11, letterSpacing: 1,
+                  textDecoration: 'none', cursor: 'pointer', transition: 'border-color .15s',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--gold-dim)')}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+              >
+                <span style={{ color: 'var(--fg)' }}>{country}</span>
                 <span style={{ color: 'var(--muted)', fontSize: 10 }}>{cnt}</span>
-              </div>
+              </Link>
             ))}
           </div>
         ) : <div style={{ color: 'var(--muted)', fontSize: 12 }}>Log some races to see countries.</div>}
@@ -353,7 +377,8 @@ export default function ProfilePage() {
         {withReviews.length > 0 ? withReviews.map(l => {
           const r = races.find(x => x.slug === l.slug)
           return (
-            <Link key={l.id} href={`/races/${l.slug}/${l.year}`} style={{ display: 'block', padding: '12px 0', borderBottom: '1px solid var(--border)', textDecoration: 'none' }}>
+            // FIX 5: reviews now link to /review/[handle]/[slug]/[year] not the edition page
+            <Link key={l.id} href={`/review/${displayProfile?.handle}/${l.slug}/${l.year}`} style={{ display: 'block', padding: '12px 0', borderBottom: '1px solid var(--border)', textDecoration: 'none' }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gold)', marginBottom: 4 }}>
                 {r?.race_name || l.slug} {l.year}{l.rating ? ` · ★ ${l.rating}` : ''}
               </div>
