@@ -37,6 +37,33 @@ function riderInitials(name: string) {
 }
 
 // ── Riders Section ────────────────────────────────────────────────────────────
+// REPLACE the entire RidersSection function AND the RiderRow interface
+// in RaceGrid.tsx with this block.
+// Also replace the existing formatRiderName function at the top of RaceGrid.tsx
+// with the one below (it correctly handles DB-format "LASTNAME Firstname" → "Firstname Lastname")
+
+// ── Name helpers (replace the existing formatRiderName at top of file) ────────
+
+function _isAllCaps(w: string): boolean {
+  return w.length > 0 && w === w.toUpperCase() && /[A-ZÁÉÍÓÚÀÈÌÒÙÄËÏÖÜÂÊÎÔÛÃÕÑČŠŽĆĐ]/u.test(w)
+}
+
+// DB stores names as "LASTNAME Firstname" (uppercase words = last name)
+// This converts to "Firstname Lastname" for display
+function formatRiderName(name: string): string {
+  if (!name) return ''
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  // Find where uppercase words end (those are the last name)
+  let splitIdx = parts.length
+  for (let i = 0; i < parts.length; i++) {
+    if (!_isAllCaps(parts[i])) { splitIdx = i; break }
+  }
+  const last = parts.slice(0, splitIdx).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+  const first = parts.slice(splitIdx).join(' ')
+  return first ? `${first} ${last}` : last
+}
+
+// ── RidersSection ─────────────────────────────────────────────────────────────
 
 interface RiderRow {
   rider_name: string
@@ -49,160 +76,130 @@ function RidersSection() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<RiderRow[]>([])
   const [featured, setFeatured] = useState<RiderRow[]>([])
+  const [featuredLoading, setFeaturedLoading] = useState(true)
   const [searching, setSearching] = useState(false)
   const [label, setLabel] = useState('Featured Riders')
 
   useEffect(() => {
-    // Load featured riders from app_config, using per-name ilike queries
-    // so names don't need to be exact-case matches
-    supabase
-      .from('app_config')
-      .select('key,value')
-      .eq('key', 'featured_riders')
-      .maybeSingle()
-      .then(async ({ data }) => {
-        const entries: any[] = Array.isArray(data?.value) ? data.value : []
-        if (!entries.length) return
-
-        // Extract name — entries may be strings or {name, imageUrl} objects
-        const extractName = (e: any) =>
-          typeof e === 'object' ? (e?.name || '') : (e || '')
-        const extractConfigImg = (e: any) =>
-          typeof e === 'object' ? (e?.imageUrl || null) : null
-
-        const names = entries.map(extractName).filter(Boolean)
-
-        // Fetch each rider by ilike (exact first, then fuzzy fallback)
-        // matching the original HTML approach
-        const allRows: any[] = []
-        await Promise.all(
-          names.map(async (name: string) => {
-            // Try exact ilike match first
-            const { data: exact } = await supabase
-              .from('startlists')
-              .select('rider_name,team_name,nationality,image_url,year')
-              .ilike('rider_name', name)
-              .order('year', { ascending: false })
-              .limit(20)
-
-            if (exact?.length) {
-              exact.forEach((r: any) => allRows.push({ ...r, _searchName: name }))
-              return
-            }
-
-            // Fuzzy fallback: search by last word (surname)
-            const parts = name.trim().split(' ')
-            const surname = parts[parts.length - 1]
-            const { data: fuzzy } = await supabase
-              .from('startlists')
-              .select('rider_name,team_name,nationality,image_url,year')
-              .ilike('rider_name', `%${surname}%`)
-              .order('year', { ascending: false })
-              .limit(5)
-
-            if (fuzzy?.length) {
-              fuzzy.forEach((r: any) => allRows.push({ ...r, _searchName: name }))
-            }
-          })
-        )
-
-        // For each queried name, pick the best row:
-        // prefer row with an image, then prefer most recent year
-        const bestByName = new Map<string, any>()
-        const latestByName = new Map<string, any>()
-
-        allRows.forEach((r: any) => {
-          const key = r._searchName.toLowerCase()
-          const hasImg = r.image_url && r.image_url !== 'none'
-
-          const prev = bestByName.get(key)
-          if (!prev) {
-            bestByName.set(key, r)
-          } else {
-            const prevHasImg = prev.image_url && prev.image_url !== 'none'
-            if (hasImg && !prevHasImg) {
-              bestByName.set(key, r)
-            } else if (!hasImg && prevHasImg) {
-              // keep prev
-            } else if (r.year > prev.year) {
-              bestByName.set(key, r)
-            }
-          }
-
-          const prevLatest = latestByName.get(key)
-          if (!prevLatest || r.year > prevLatest.year) {
-            latestByName.set(key, r)
-          }
-        })
-
-        const result: RiderRow[] = names
-          .map((name: string) => {
-            const key = name.toLowerCase()
-            const best = bestByName.get(key)
-            const latest = latestByName.get(key)
-            const entry = entries.find((e: any) => extractName(e).toLowerCase() === key)
-            const configImg = entry ? extractConfigImg(entry) : null
-
-            if (!best) {
-              // No DB match — show placeholder using the config name
-              return { rider_name: name, team_name: null, nationality: null, image_url: configImg }
-            }
-
-            const img =
-              best.image_url && best.image_url !== 'none'
-                ? best.image_url
-                : configImg || null
-
-            return {
-              rider_name: best.rider_name,
-              team_name: latest?.team_name ?? best.team_name,
-              nationality: latest?.nationality ?? best.nationality,
-              image_url: img,
-            }
-          })
-          .filter(Boolean) as RiderRow[]
-
-        setFeatured(result)
-      })
+    loadFeatured()
   }, [])
 
-  // Search: debounced 300ms, fires on 2+ chars
+  async function loadFeatured() {
+    setFeaturedLoading(true)
+
+    // 1. Get featured rider names from app_config
+    const { data: configRow } = await supabase
+      .from('app_config')
+      .select('value')
+      .eq('key', 'featured_riders')
+      .maybeSingle()
+
+    const entries: any[] = Array.isArray(configRow?.value) ? configRow.value : []
+    if (!entries.length) { setFeaturedLoading(false); return }
+
+    const extractName = (e: any) => typeof e === 'object' ? (e?.name || '') : (e || '')
+    const names: string[] = entries.map(extractName).filter(Boolean)
+
+    // 2. Fetch all riders in a SINGLE batch query using ilike with OR
+    // Build a search string that catches all of them
+    // Strategy: fetch a generous batch from startlists ordered by year desc,
+    // then match by name (case-insensitive)
+    const { data: rows } = await supabase
+      .from('startlists')
+      .select('rider_name,team_name,nationality,image_url,year')
+      .order('year', { ascending: false })
+      .limit(2000)
+
+    if (!rows?.length) { setFeaturedLoading(false); return }
+
+    // 3. For each featured name, find the best matching row
+    // "Best" = has image, then most recent year
+    const result: RiderRow[] = names.map(name => {
+      const nameLower = name.toLowerCase()
+      // Find all rows whose rider_name matches this name (case-insensitive)
+      const matches = rows.filter((r: any) => r.rider_name.toLowerCase() === nameLower)
+
+      if (!matches.length) {
+        // Fuzzy: try surname-only match (last word of the name, which in DB format is first word)
+        const surname = name.split(' ')[0].toLowerCase() // DB format: SURNAME is first
+        const fuzzy = rows.filter((r: any) =>
+          r.rider_name.toLowerCase().startsWith(surname + ' ') ||
+          r.rider_name.toLowerCase() === surname
+        )
+        if (!fuzzy.length) {
+          return { rider_name: name, team_name: null, nationality: null, image_url: null }
+        }
+        return pickBest(fuzzy)
+      }
+
+      return pickBest(matches)
+    })
+
+    setFeatured(result)
+    setFeaturedLoading(false)
+  }
+
+  function pickBest(rows: any[]): RiderRow {
+    // Sort: image present first, then most recent year
+    const sorted = [...rows].sort((a, b) => {
+      const aImg = a.image_url && a.image_url !== 'none' ? 1 : 0
+      const bImg = b.image_url && b.image_url !== 'none' ? 1 : 0
+      if (bImg !== aImg) return bImg - aImg
+      return (b.year || 0) - (a.year || 0)
+    })
+    const best = sorted[0]
+    // Use latest entry for team name (most up-to-date)
+    const latest = rows.reduce((a, b) => ((b.year || 0) > (a.year || 0) ? b : a), rows[0])
+    return {
+      rider_name: best.rider_name,
+      team_name: latest.team_name,
+      nationality: latest.nationality,
+      image_url: best.image_url && best.image_url !== 'none' ? best.image_url : null,
+    }
+  }
+
+  // Search: debounced, fires on 2+ chars
   useEffect(() => {
     if (query.length < 2) {
       setResults([])
       setLabel('Featured Riders')
+      setSearching(false)
       return
     }
+
+    setSearching(true)
     const timer = setTimeout(async () => {
-      setSearching(true)
+      // Search supports "Tadej Pogacar" style (display order) by trying both orderings
+      const q = query.trim()
+
       const { data } = await supabase
         .from('startlists')
         .select('rider_name,team_name,nationality,image_url,year')
-        .ilike('rider_name', `%${query}%`)
+        .ilike('rider_name', `%${q}%`)
         .order('year', { ascending: false })
-        .limit(100)
+        .limit(200)
 
-      // Deduplicate — prefer rows with images, then most recent year
-      const seen = new Map<string, RiderRow>()
+      // Deduplicate by rider_name (case-insensitive), keeping best image + latest team
+      const grouped = new Map<string, any[]>()
       ;(data || []).forEach((r: any) => {
         const key = r.rider_name.toLowerCase()
-        const prev = seen.get(key)
-        const hasImg = r.image_url && r.image_url !== 'none'
-        const prevHasImg = prev?.image_url && prev.image_url !== 'none'
-        if (!prev || (hasImg && !prevHasImg) || (!prevHasImg && r.year > (prev as any).year)) {
-          seen.set(key, r)
-        }
+        if (!grouped.has(key)) grouped.set(key, [])
+        grouped.get(key)!.push(r)
       })
 
-      const unique = Array.from(seen.values()).slice(0, 30)
+      const unique: RiderRow[] = Array.from(grouped.values())
+        .map(pickBest)
+        .slice(0, 30)
+
       setResults(unique)
       setLabel(`${unique.length} result${unique.length !== 1 ? 's' : ''}`)
       setSearching(false)
-    }, 300)
+    }, 250)
     return () => clearTimeout(timer)
   }, [query])
 
   const displayList = query.length >= 2 ? results : featured
+  const isLoading = featuredLoading && query.length < 2
 
   return (
     <div>
@@ -237,57 +234,70 @@ function RidersSection() {
           {searching ? 'Searching…' : label}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 16 }}>
-          {displayList.map(r => {
-            const hasImg = r.image_url && r.image_url !== 'none'
-            const col = riderColor(r.rider_name)
-            const ini = riderInitials(r.rider_name)
-            return (
-              <Link
-                key={r.rider_name}
-                href={`/riders/${encodeURIComponent(r.rider_name)}`}
-                style={{ textDecoration: 'none', display: 'block' }}
-              >
-                <div style={{
-                  aspectRatio: '2/3', background: col, overflow: 'hidden',
-                  position: 'relative', marginBottom: 8,
-                }}>
-                  {hasImg ? (
-                    <img
-                      src={r.image_url!}
-                      alt={formatRiderName(r.rider_name)}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
-                    />
-                  ) : (
+        {isLoading ? (
+          // Skeleton placeholders while loading
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 16 }}>
+            {[...Array(10)].map((_, i) => (
+              <div key={i}>
+                <div className="skeleton" style={{ aspectRatio: '2/3', marginBottom: 8, borderRadius: 2 }} />
+                <div className="skeleton skeleton-text" style={{ width: '80%' }} />
+                <div className="skeleton skeleton-text" style={{ width: '60%' }} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 16 }}>
+            {displayList.map(r => {
+              const hasImg = r.image_url && r.image_url !== 'none'
+              const col = riderColor(r.rider_name)
+              const ini = riderInitials(r.rider_name)
+              return (
+                <Link
+                  key={r.rider_name}
+                  href={`/riders/${encodeURIComponent(r.rider_name)}`}
+                  style={{ textDecoration: 'none', display: 'block' }}
+                >
+                  <div style={{
+                    aspectRatio: '2/3', background: col, overflow: 'hidden',
+                    position: 'relative', marginBottom: 8,
+                  }}>
+                    {hasImg ? (
+                      <img
+                        src={r.image_url!}
+                        alt={formatRiderName(r.rider_name)}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
+                      />
+                    ) : (
+                      <div style={{
+                        width: '100%', height: '100%', display: 'flex',
+                        alignItems: 'center', justifyContent: 'center',
+                        fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: '#fff',
+                      }}>
+                        {ini}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--fg)', lineHeight: 1.3, marginBottom: 2 }}>
+                    {formatRiderName(r.rider_name)}
+                  </div>
+                  {r.team_name && (
                     <div style={{
-                      width: '100%', height: '100%', display: 'flex',
-                      alignItems: 'center', justifyContent: 'center',
-                      fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: '#fff',
+                      fontSize: 9, color: 'var(--muted)', letterSpacing: 0.5,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }}>
-                      {ini}
+                      {r.team_name}
                     </div>
                   )}
-                </div>
-                <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--fg)', lineHeight: 1.3, marginBottom: 2 }}>
-                  {formatRiderName(r.rider_name)}
-                </div>
-                {r.team_name && (
-                  <div style={{
-                    fontSize: 9, color: 'var(--muted)', letterSpacing: 0.5,
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {r.team_name}
-                  </div>
-                )}
-              </Link>
-            )
-          })}
-          {!searching && query.length >= 2 && results.length === 0 && (
-            <div style={{ gridColumn: '1/-1', color: 'var(--muted)', fontSize: 12 }}>
-              No riders found for "{query}".
-            </div>
-          )}
-        </div>
+                </Link>
+              )
+            })}
+            {!searching && query.length >= 2 && results.length === 0 && (
+              <div style={{ gridColumn: '1/-1', color: 'var(--muted)', fontSize: 12 }}>
+                No riders found for "{query}".
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
