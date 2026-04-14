@@ -19,12 +19,6 @@ const TIERS = [
   { key: 'champ', label: 'Championships' },
 ]
 
-function formatRiderName(name: string): string {
-  if (!name) return ''
-  return name.split(' ').map(w =>
-    w === w.toUpperCase() && w.length > 1 ? w.charAt(0) + w.slice(1).toLowerCase() : w
-  ).join(' ')
-}
 
 function riderColor(name: string): string {
   const PALETTE = ['#1a3a8c', '#00594a', '#c0392b', '#9a8430', '#4527a0', '#00838f', '#6d4c41', '#1a4db3']
