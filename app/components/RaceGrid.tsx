@@ -6,10 +6,18 @@ import { useUser } from '@/app/context/UserContext'
 import LogRaceModal from './LogRaceModal'
 import { supabase } from '@/lib/supabase'
 
+interface FeaturedRider {
+  rider_name: string
+  team_name: string | null
+  nationality: string | null
+  image_url: string | null
+}
+
 interface Props {
   races: Race[]
   sgLabels: Record<string, string>
   sgClass: Record<string, string>
+  featuredRiders: FeaturedRider[]
 }
 
 const TIERS = [
@@ -19,6 +27,23 @@ const TIERS = [
   { key: 'champ', label: 'Championships' },
 ]
 
+// DB stores names as "LASTNAME Firstname" (uppercase words = last name)
+// Converts "POGAČAR Tadej" → "Tadej Pogačar"
+function _isAllCaps(w: string): boolean {
+  return w.length > 0 && w === w.toUpperCase() && /[A-ZÁÉÍÓÚÀÈÌÒÙÄËÏÖÜÂÊÎÔÛÃÕÑČŠŽĆĐ]/u.test(w)
+}
+
+function formatRiderName(name: string): string {
+  if (!name) return ''
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  let splitIdx = parts.length
+  for (let i = 0; i < parts.length; i++) {
+    if (!_isAllCaps(parts[i])) { splitIdx = i; break }
+  }
+  const last = parts.slice(0, splitIdx).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+  const first = parts.slice(splitIdx).join(' ')
+  return first ? `${first} ${last}` : last
+}
 
 function riderColor(name: string): string {
   const PALETTE = ['#1a3a8c', '#00594a', '#c0392b', '#9a8430', '#4527a0', '#00838f', '#6d4c41', '#1a4db3']
@@ -31,33 +56,6 @@ function riderInitials(name: string) {
 }
 
 // ── Riders Section ────────────────────────────────────────────────────────────
-// REPLACE the entire RidersSection function AND the RiderRow interface
-// in RaceGrid.tsx with this block.
-// Also replace the existing formatRiderName function at the top of RaceGrid.tsx
-// with the one below (it correctly handles DB-format "LASTNAME Firstname" → "Firstname Lastname")
-
-// ── Name helpers (replace the existing formatRiderName at top of file) ────────
-
-function _isAllCaps(w: string): boolean {
-  return w.length > 0 && w === w.toUpperCase() && /[A-ZÁÉÍÓÚÀÈÌÒÙÄËÏÖÜÂÊÎÔÛÃÕÑČŠŽĆĐ]/u.test(w)
-}
-
-// DB stores names as "LASTNAME Firstname" (uppercase words = last name)
-// This converts to "Firstname Lastname" for display
-function formatRiderName(name: string): string {
-  if (!name) return ''
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  // Find where uppercase words end (those are the last name)
-  let splitIdx = parts.length
-  for (let i = 0; i < parts.length; i++) {
-    if (!_isAllCaps(parts[i])) { splitIdx = i; break }
-  }
-  const last = parts.slice(0, splitIdx).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
-  const first = parts.slice(splitIdx).join(' ')
-  return first ? `${first} ${last}` : last
-}
-
-// ── RidersSection ─────────────────────────────────────────────────────────────
 
 interface RiderRow {
   rider_name: string
@@ -66,93 +64,32 @@ interface RiderRow {
   image_url: string | null
 }
 
-function RidersSection() {
+function pickBest(rows: any[]): RiderRow {
+  const sorted = [...rows].sort((a, b) => {
+    const ai = a.image_url && a.image_url !== 'none' ? 1 : 0
+    const bi = b.image_url && b.image_url !== 'none' ? 1 : 0
+    if (bi !== ai) return bi - ai
+    return (b.year || 0) - (a.year || 0)
+  })
+  const best = sorted[0]
+  const latest = rows.reduce((a, b) => ((b.year || 0) > (a.year || 0) ? b : a), rows[0])
+  return {
+    rider_name: best.rider_name,
+    team_name: latest.team_name,
+    nationality: latest.nationality,
+    image_url: best.image_url && best.image_url !== 'none' ? best.image_url : null,
+  }
+}
+
+// featuredRiders is pre-fetched server-side and passed as a prop —
+// no client-side loading needed for the initial display
+function RidersSection({ featuredRiders }: { featuredRiders: FeaturedRider[] }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<RiderRow[]>([])
-  const [featured, setFeatured] = useState<RiderRow[]>([])
-  const [featuredLoading, setFeaturedLoading] = useState(true)
   const [searching, setSearching] = useState(false)
   const [label, setLabel] = useState('Featured Riders')
 
-  useEffect(() => {
-    loadFeatured()
-  }, [])
-
-  async function loadFeatured() {
-    setFeaturedLoading(true)
-
-    // 1. Get featured rider names from app_config
-    const { data: configRow } = await supabase
-      .from('app_config')
-      .select('value')
-      .eq('key', 'featured_riders')
-      .maybeSingle()
-
-    const entries: any[] = Array.isArray(configRow?.value) ? configRow.value : []
-    if (!entries.length) { setFeaturedLoading(false); return }
-
-    const extractName = (e: any) => typeof e === 'object' ? (e?.name || '') : (e || '')
-    const names: string[] = entries.map(extractName).filter(Boolean)
-
-    // 2. Fetch all riders in a SINGLE batch query using ilike with OR
-    // Build a search string that catches all of them
-    // Strategy: fetch a generous batch from startlists ordered by year desc,
-    // then match by name (case-insensitive)
-    const { data: rows } = await supabase
-      .from('startlists')
-      .select('rider_name,team_name,nationality,image_url,year')
-      .order('year', { ascending: false })
-      .limit(2000)
-
-    if (!rows?.length) { setFeaturedLoading(false); return }
-
-    // 3. For each featured name, find the best matching row
-    // "Best" = has image, then most recent year
-    const result: RiderRow[] = names.map(name => {
-      const nameLower = name.toLowerCase()
-      // Find all rows whose rider_name matches this name (case-insensitive)
-      const matches = rows.filter((r: any) => r.rider_name.toLowerCase() === nameLower)
-
-      if (!matches.length) {
-        // Fuzzy: try surname-only match (last word of the name, which in DB format is first word)
-        const surname = name.split(' ')[0].toLowerCase() // DB format: SURNAME is first
-        const fuzzy = rows.filter((r: any) =>
-          r.rider_name.toLowerCase().startsWith(surname + ' ') ||
-          r.rider_name.toLowerCase() === surname
-        )
-        if (!fuzzy.length) {
-          return { rider_name: name, team_name: null, nationality: null, image_url: null }
-        }
-        return pickBest(fuzzy)
-      }
-
-      return pickBest(matches)
-    })
-
-    setFeatured(result)
-    setFeaturedLoading(false)
-  }
-
-  function pickBest(rows: any[]): RiderRow {
-    // Sort: image present first, then most recent year
-    const sorted = [...rows].sort((a, b) => {
-      const aImg = a.image_url && a.image_url !== 'none' ? 1 : 0
-      const bImg = b.image_url && b.image_url !== 'none' ? 1 : 0
-      if (bImg !== aImg) return bImg - aImg
-      return (b.year || 0) - (a.year || 0)
-    })
-    const best = sorted[0]
-    // Use latest entry for team name (most up-to-date)
-    const latest = rows.reduce((a, b) => ((b.year || 0) > (a.year || 0) ? b : a), rows[0])
-    return {
-      rider_name: best.rider_name,
-      team_name: latest.team_name,
-      nationality: latest.nationality,
-      image_url: best.image_url && best.image_url !== 'none' ? best.image_url : null,
-    }
-  }
-
-  // Search: debounced, fires on 2+ chars
+  // Search: debounced 250ms, fires on 2+ chars
   useEffect(() => {
     if (query.length < 2) {
       setResults([])
@@ -163,17 +100,14 @@ function RidersSection() {
 
     setSearching(true)
     const timer = setTimeout(async () => {
-      // Search supports "Tadej Pogacar" style (display order) by trying both orderings
-      const q = query.trim()
-
       const { data } = await supabase
         .from('startlists')
         .select('rider_name,team_name,nationality,image_url,year')
-        .ilike('rider_name', `%${q}%`)
+        .ilike('rider_name', `%${query}%`)
         .order('year', { ascending: false })
         .limit(200)
 
-      // Deduplicate by rider_name (case-insensitive), keeping best image + latest team
+      // Deduplicate by rider_name, keeping best image + latest team
       const grouped = new Map<string, any[]>()
       ;(data || []).forEach((r: any) => {
         const key = r.rider_name.toLowerCase()
@@ -181,10 +115,7 @@ function RidersSection() {
         grouped.get(key)!.push(r)
       })
 
-      const unique: RiderRow[] = Array.from(grouped.values())
-        .map(pickBest)
-        .slice(0, 30)
-
+      const unique: RiderRow[] = Array.from(grouped.values()).map(pickBest).slice(0, 30)
       setResults(unique)
       setLabel(`${unique.length} result${unique.length !== 1 ? 's' : ''}`)
       setSearching(false)
@@ -192,8 +123,8 @@ function RidersSection() {
     return () => clearTimeout(timer)
   }, [query])
 
-  const displayList = query.length >= 2 ? results : featured
-  const isLoading = featuredLoading && query.length < 2
+  // When searching, show search results; otherwise show server-fetched featured riders
+  const displayList: RiderRow[] = query.length >= 2 ? results : featuredRiders
 
   return (
     <div>
@@ -221,77 +152,60 @@ function RidersSection() {
       </div>
 
       <div style={{ padding: '28px 40px' }}>
-        <div style={{
-          fontSize: 11, letterSpacing: 2, textTransform: 'uppercase',
-          color: 'var(--muted)', marginBottom: 18,
-        }}>
+        <div style={{ fontSize: 11, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 18 }}>
           {searching ? 'Searching…' : label}
         </div>
-
-        {isLoading ? (
-          // Skeleton placeholders while loading
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 16 }}>
-            {[...Array(10)].map((_, i) => (
-              <div key={i}>
-                <div className="skeleton" style={{ aspectRatio: '2/3', marginBottom: 8, borderRadius: 2 }} />
-                <div className="skeleton skeleton-text" style={{ width: '80%' }} />
-                <div className="skeleton skeleton-text" style={{ width: '60%' }} />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 16 }}>
-            {displayList.map(r => {
-              const hasImg = r.image_url && r.image_url !== 'none'
-              const col = riderColor(r.rider_name)
-              const ini = riderInitials(r.rider_name)
-              return (
-                <Link
-                  key={r.rider_name}
-                  href={`/riders/${encodeURIComponent(r.rider_name)}`}
-                  style={{ textDecoration: 'none', display: 'block' }}
-                >
-                  <div style={{
-                    aspectRatio: '2/3', background: col, overflow: 'hidden',
-                    position: 'relative', marginBottom: 8,
-                  }}>
-                    {hasImg ? (
-                      <img
-                        src={r.image_url!}
-                        alt={formatRiderName(r.rider_name)}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
-                      />
-                    ) : (
-                      <div style={{
-                        width: '100%', height: '100%', display: 'flex',
-                        alignItems: 'center', justifyContent: 'center',
-                        fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: '#fff',
-                      }}>
-                        {ini}
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--fg)', lineHeight: 1.3, marginBottom: 2 }}>
-                    {formatRiderName(r.rider_name)}
-                  </div>
-                  {r.team_name && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 16 }}>
+          {displayList.map(r => {
+            const hasImg = r.image_url && r.image_url !== 'none'
+            const col = riderColor(r.rider_name)
+            const ini = riderInitials(r.rider_name)
+            return (
+              <Link
+                key={r.rider_name}
+                href={`/riders/${encodeURIComponent(r.rider_name)}`}
+                style={{ textDecoration: 'none', display: 'block' }}
+              >
+                <div style={{
+                  aspectRatio: '2/3', background: col, overflow: 'hidden',
+                  position: 'relative', marginBottom: 8,
+                }}>
+                  {hasImg ? (
+                    <img
+                      src={r.image_url!}
+                      alt={formatRiderName(r.rider_name)}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
+                    />
+                  ) : (
                     <div style={{
-                      fontSize: 9, color: 'var(--muted)', letterSpacing: 0.5,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      width: '100%', height: '100%', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center',
+                      fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: '#fff',
                     }}>
-                      {r.team_name}
+                      {ini}
                     </div>
                   )}
-                </Link>
-              )
-            })}
-            {!searching && query.length >= 2 && results.length === 0 && (
-              <div style={{ gridColumn: '1/-1', color: 'var(--muted)', fontSize: 12 }}>
-                No riders found for "{query}".
-              </div>
-            )}
-          </div>
-        )}
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--fg)', lineHeight: 1.3, marginBottom: 2 }}>
+                  {formatRiderName(r.rider_name)}
+                </div>
+                {r.team_name && (
+                  <div style={{
+                    fontSize: 9, color: 'var(--muted)', letterSpacing: 0.5,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {r.team_name}
+                  </div>
+                )}
+              </Link>
+            )
+          })}
+          {!searching && query.length >= 2 && results.length === 0 && (
+            <div style={{ gridColumn: '1/-1', color: 'var(--muted)', fontSize: 12 }}>
+              No riders found for "{query}".
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -299,7 +213,7 @@ function RidersSection() {
 
 // ── Main RaceGrid ─────────────────────────────────────────────────────────────
 
-export default function RaceGrid({ races, sgLabels, sgClass }: Props) {
+export default function RaceGrid({ races, sgLabels, sgClass, featuredRiders }: Props) {
   const { user, isLogged, watchlist } = useUser()
   const [discoverSection, setDiscoverSection] = useState<'races' | 'riders'>('races')
   const [tier, setTier] = useState('all')
@@ -330,7 +244,8 @@ export default function RaceGrid({ races, sgLabels, sgClass }: Props) {
       if (filterShow === 'logged' && !isLogged(r.slug)) return false
       if (filterShow === 'unlogged' && isLogged(r.slug)) return false
       if (filterShow === 'watchlist' && !watchlist.includes(r.slug)) return false
-      if (search && !r.race_name.toLowerCase().includes(search.toLowerCase()) && !(r.country || '').toLowerCase().includes(search.toLowerCase())) return false
+      if (search && !r.race_name.toLowerCase().includes(search.toLowerCase()) &&
+        !(r.country || '').toLowerCase().includes(search.toLowerCase())) return false
       return true
     })
   }, [races, tier, tab, filterShow, search, isLogged, watchlist])
@@ -358,8 +273,8 @@ export default function RaceGrid({ races, sgLabels, sgClass }: Props) {
           onClick={() => setDiscoverSection('riders')}>Riders</button>
       </div>
 
-      {/* Riders section */}
-      {discoverSection === 'riders' && <RidersSection />}
+      {/* Riders section — receives server-fetched data, no loading state needed */}
+      {discoverSection === 'riders' && <RidersSection featuredRiders={featuredRiders} />}
 
       {/* Races section */}
       {discoverSection === 'races' && (
@@ -522,19 +437,22 @@ function RecentActivitySidebar() {
     </div>
   )
 
-  if (!recent.length) return <div className="empty-log">Your logged races will appear here.</div>
+  if (!recent.length) return (
+    <div className="empty-log">No races logged yet.</div>
+  )
 
   return (
     <div>
-      {recent.map((log: any) => (
-        <Link key={log.id} href={`/races/${log.slug}/${log.year}`} className="sle" style={{ textDecoration: 'none', display: 'block' }}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <div style={{ width: 4, height: 32, background: raceGradients[log.slug] || 'var(--border)', flexShrink: 0, borderRadius: 1 }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="sle-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {raceNames[log.slug] || log.slug}
-              </div>
-              <div className="sle-yr">{log.year}{log.rating ? ` · ★ ${log.rating.toFixed(1)}` : ''}</div>
+      <div className="sb-title">Recent Activity</div>
+      {recent.map((l: any) => (
+        <Link key={l.id} href={`/races/${l.slug}/${l.year}`} className="sle" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 4, height: 40, background: raceGradients[l.slug] || 'var(--border)', flexShrink: 0, borderRadius: 2 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {raceNames[l.slug] || l.slug}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+              {l.year}{l.rating ? ` · ★ ${l.rating}` : ''}
             </div>
           </div>
         </Link>
