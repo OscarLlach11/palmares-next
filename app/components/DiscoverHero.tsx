@@ -19,11 +19,11 @@ type FeedItem = {
   rating: number | null
   review: string | null
   created_at: string
+  user_id: string
   profiles: { display_name: string; handle: string; avatar_url: string | null } | null
   race: { race_name: string; gradient: string; logo_url: string | null } | null
 }
 
-// Half-star display component
 function StarDisplay({ rating }: { rating: number }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -70,85 +70,81 @@ export default function DiscoverHero({ globalLogCount, globalRatingCount, raceCo
 
   const displayLogCount = user ? userLogCount : globalLogCount
   const displayRatingCount = user ? userRatingCount : globalRatingCount
-  const followingCount = followingIds.size
 
   useEffect(() => {
     if (!user) return
     loadFeed(user.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, followingCount])
+  }, [user?.id, followingIds])
 
   async function loadFeed(uid: string) {
-    // Get who we follow
+    // Step 1: get who we follow directly from DB (don't rely on context timing)
     const { data: followData } = await supabase
       .from('follows').select('following_id').eq('follower_id', uid)
     if (!followData?.length) {
       setFeed([])
       return
     }
-
     const ids = followData.map((f: any) => f.following_id)
 
-    // Fetch race logs and stage logs in parallel
+    // Step 2: fetch race logs and stage logs — select user_id explicitly, no FK join
     const [raceLogsRes, stageLogsRes] = await Promise.all([
       supabase
         .from('race_logs')
-        .select('id,slug,year,rating,review,created_at,profiles(display_name,handle,avatar_url)')
+        .select('id,slug,year,rating,review,created_at,user_id')
         .in('user_id', ids)
         .order('created_at', { ascending: false })
         .limit(30),
       supabase
         .from('stage_logs')
-        .select('id,race_slug,year,stage_num,rating,review,created_at,profiles(display_name,handle,avatar_url)')
+        .select('id,race_slug,year,stage_num,rating,review,created_at,user_id')
         .in('user_id', ids)
         .order('created_at', { ascending: false })
         .limit(30),
     ])
 
-    const raceLogs: FeedItem[] = (raceLogsRes.data || []).map((f: any) => ({
-      id: f.id,
-      type: 'race' as const,
-      slug: f.slug,
-      year: f.year,
-      stage_num: null,
-      rating: f.rating,
-      review: f.review,
-      created_at: f.created_at,
-      profiles: f.profiles,
-      race: null,
+    const raceLogs = (raceLogsRes.data || []).map((f: any) => ({
+      id: f.id, type: 'race' as const,
+      slug: f.slug, year: f.year, stage_num: null,
+      rating: f.rating, review: f.review,
+      created_at: f.created_at, user_id: f.user_id,
+      profiles: null, race: null,
     }))
 
-    const stageLogs: FeedItem[] = (stageLogsRes.data || []).map((f: any) => ({
-      id: f.id,
-      type: 'stage' as const,
-      slug: f.race_slug,
-      year: f.year,
-      stage_num: f.stage_num,
-      rating: f.rating,
-      review: f.review,
-      created_at: f.created_at,
-      profiles: f.profiles,
-      race: null,
+    const stageLogs = (stageLogsRes.data || []).map((f: any) => ({
+      id: f.id, type: 'stage' as const,
+      slug: f.race_slug, year: f.year, stage_num: f.stage_num,
+      rating: f.rating, review: f.review,
+      created_at: f.created_at, user_id: f.user_id,
+      profiles: null, race: null,
     }))
 
-    // Merge and sort by created_at
-    const merged = [...raceLogs, ...stageLogs]
+    // Step 3: merge, sort, take top 20
+    const merged = ([...raceLogs, ...stageLogs] as FeedItem[])
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, 20)
 
-    if (!merged.length) {
-      setFeed([])
-      return
-    }
+    if (!merged.length) { setFeed([]); return }
 
-    // Fetch race metadata for all slugs
+    // Step 4: fetch profiles for all unique user_ids
+    const userIds = [...new Set(merged.map(f => f.user_id))]
+    const { data: profileData } = await supabase
+      .from('profiles').select('user_id,display_name,handle,avatar_url').in('user_id', userIds)
+    const profileMap: Record<string, any> = {}
+    ;(profileData || []).forEach((p: any) => { profileMap[p.user_id] = p })
+
+    // Step 5: fetch race metadata for all unique slugs
     const slugs = [...new Set(merged.map(f => f.slug))]
     const { data: raceData } = await supabase
       .from('races').select('slug,race_name,gradient,logo_url').in('slug', slugs)
     const raceMap: Record<string, any> = {}
     ;(raceData || []).forEach((r: any) => { raceMap[r.slug] = r })
 
-    setFeed(merged.map(f => ({ ...f, race: raceMap[f.slug] || null })))
+    setFeed(merged.map(f => ({
+      ...f,
+      profiles: profileMap[f.user_id] || null,
+      race: raceMap[f.slug] || null,
+    })))
   }
 
   return (
@@ -184,45 +180,32 @@ export default function DiscoverHero({ globalLogCount, globalRatingCount, raceCo
               const p = item.profiles as any
               const ini = (p?.display_name || '?').split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
 
-              // Link: to review page if review exists, otherwise to edition page
               const href = item.type === 'stage'
                 ? `/races/${item.slug}/${item.year}/stages/${item.stage_num}`
                 : item.review?.trim() && p?.handle
                   ? `/review/${p.handle}/${item.slug}/${item.year}`
                   : `/races/${item.slug}/${item.year}`
 
-              // Year label: "2024 · S3" for stages, "2024" for races
               const yearLabel = item.type === 'stage' && item.stage_num != null
                 ? `${item.year} · S${item.stage_num}`
                 : String(item.year)
 
               return (
                 <Link key={`${item.type}-${item.id}`} href={href} className="feed-item" style={{ textDecoration: 'none' }}>
-                  {/* Poster */}
                   <div className="feed-poster" style={{ background: item.race?.gradient || 'var(--border)' }}>
-                    {/* Stage badge */}
                     {item.type === 'stage' && (
-                      <div className="feed-poster-stage">
-                        Stage {item.stage_num}
-                      </div>
+                      <div className="feed-poster-stage">Stage {item.stage_num}</div>
                     )}
-
-                    {/* Race logo or name */}
                     {item.race?.logo_url ? (
                       <div className="feed-poster-bg">
-                        <img
-                          src={item.race.logo_url}
-                          alt={item.race.race_name}
-                          style={{ maxWidth: '80%', maxHeight: '70%', objectFit: 'contain' }}
-                        />
+                        <img src={item.race.logo_url} alt={item.race.race_name}
+                          style={{ maxWidth: '80%', maxHeight: '70%', objectFit: 'contain' }} />
                       </div>
                     ) : (
                       <div className="feed-poster-bg">
                         <div className="feed-poster-title">{item.race?.race_name || item.slug}</div>
                       </div>
                     )}
-
-                    {/* Year (+ stage num) at bottom */}
                     <div style={{
                       position: 'absolute', bottom: 6, left: 8,
                       fontFamily: "'Bebas Neue', sans-serif", fontSize: 12,
@@ -232,22 +215,19 @@ export default function DiscoverHero({ globalLogCount, globalRatingCount, raceCo
                     </div>
                   </div>
 
-                  {/* User row */}
                   <div className="feed-user" style={{ marginTop: 7 }}>
                     <div className="feed-avatar">
                       {p?.avatar_url
-                        ? <img src={p.avatar_url} alt={p.display_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ? <img src={p.avatar_url} alt={p?.display_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         : ini}
                     </div>
                     <div className="feed-username">@{p?.handle || 'cyclist'}</div>
                   </div>
 
-                  {/* Date logged */}
                   <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 2, letterSpacing: 0.5 }}>
                     {fmtDate(item.created_at)}
                   </div>
 
-                  {/* Rating */}
                   {item.rating != null && item.rating > 0 && (
                     <div className="feed-stars" style={{ marginTop: 4 }}>
                       <StarDisplay rating={item.rating} />
