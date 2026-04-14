@@ -29,35 +29,28 @@ async function getRaces() {
 
   const races = racesRes.data || []
 
-  // Build a date map: race_id -> best MM-DD for calendar sorting
   const dateMap: Record<string, string> = {}
   const SORT_YEARS = [2025, 2024, 2026, 2023, 2022, 2021, 2020]
   ;(datesRes.data || []).forEach((d: any) => {
     const existing = dateMap[d.race_id]
-    const mmdd = (d.race_date || '').slice(5) // "MM-DD"
+    const mmdd = (d.race_date || '').slice(5)
     if (!mmdd) return
     if (!existing) { dateMap[d.race_id] = mmdd; return }
-    // Prefer a recent stable year
-    const existingYear = parseInt(Object.entries(dateMap).find(([k]) => k === d.race_id)?.[0] || '0')
     const currentPriority = SORT_YEARS.indexOf(d.year)
-    if (currentPriority !== -1 && currentPriority < SORT_YEARS.indexOf(existingYear)) {
+    if (currentPriority !== -1 && currentPriority < SORT_YEARS.indexOf(parseInt(Object.entries(dateMap).find(([k]) => k === d.race_id)?.[0] || '0'))) {
       dateMap[d.race_id] = mmdd
     }
   })
 
-  // Sort: WT first, then by MM-DD calendar position, then by first_year
   const isWT = (r: any) => r.tier === 'WT'
   const isChamp = (r: any) => r.race_type === 'championship'
 
   return [...races].sort((a: any, b: any) => {
-    // Championships always last
     if (isChamp(a) && !isChamp(b)) return 1
     if (!isChamp(a) && isChamp(b)) return -1
-    // WT before non-WT
     const aWT = isWT(a) ? 0 : 1
     const bWT = isWT(b) ? 0 : 1
     if (aWT !== bWT) return aWT - bWT
-    // Within same tier, sort by calendar MM-DD
     const mmddA = dateMap[a.slug] || ''
     const mmddB = dateMap[b.slug] || ''
     if (mmddA && mmddB) return mmddA.localeCompare(mmddB)
@@ -78,8 +71,79 @@ async function getGlobalStats() {
   return { raceCount, logCount, ratingCount }
 }
 
+type FeaturedRider = {
+  rider_name: string
+  team_name: string | null
+  nationality: string | null
+  image_url: string | null
+}
+
+function pickBestRow(rows: any[]): FeaturedRider {
+  const sorted = [...rows].sort((a, b) => {
+    const ai = a.image_url && a.image_url !== 'none' ? 1 : 0
+    const bi = b.image_url && b.image_url !== 'none' ? 1 : 0
+    if (bi !== ai) return bi - ai
+    return (b.year || 0) - (a.year || 0)
+  })
+  const best = sorted[0]
+  const latest = rows.reduce((a, b) => ((b.year || 0) > (a.year || 0) ? b : a), rows[0])
+  return {
+    rider_name: best.rider_name,
+    team_name: latest.team_name,
+    nationality: latest.nationality,
+    image_url: best.image_url && best.image_url !== 'none' ? best.image_url : null,
+  }
+}
+
+async function getFeaturedRiders(): Promise<FeaturedRider[]> {
+  const { data: configRow } = await supabase
+    .from('app_config')
+    .select('value')
+    .eq('key', 'featured_riders')
+    .maybeSingle()
+
+  const entries: any[] = Array.isArray(configRow?.value) ? configRow.value : []
+  if (!entries.length) return []
+
+  const extractName = (e: any) => typeof e === 'object' ? (e?.name || '') : (e || '')
+  const names: string[] = entries.map(extractName).filter(Boolean)
+
+  // Fetch all riders in parallel — one ilike query per name
+  const results = await Promise.all(
+    names.map(async (name) => {
+      const { data: exact } = await supabase
+        .from('startlists')
+        .select('rider_name,team_name,nationality,image_url,year')
+        .ilike('rider_name', name)
+        .order('year', { ascending: false })
+        .limit(20)
+
+      if (exact?.length) return pickBestRow(exact)
+
+      // Fallback: surname-only search (first word in DB format = surname)
+      const surname = name.split(' ')[0]
+      const { data: fuzzy } = await supabase
+        .from('startlists')
+        .select('rider_name,team_name,nationality,image_url,year')
+        .ilike('rider_name', `${surname}%`)
+        .order('year', { ascending: false })
+        .limit(10)
+
+      if (fuzzy?.length) return pickBestRow(fuzzy)
+
+      return { rider_name: name, team_name: null, nationality: null, image_url: null }
+    })
+  )
+
+  return results
+}
+
 export default async function DiscoverPage() {
-  const [races, globalStats] = await Promise.all([getRaces(), getGlobalStats()])
+  const [races, globalStats, featuredRiders] = await Promise.all([
+    getRaces(),
+    getGlobalStats(),
+    getFeaturedRiders(),
+  ])
 
   return (
     <>
@@ -88,7 +152,12 @@ export default async function DiscoverPage() {
         globalRatingCount={globalStats.ratingCount}
         raceCount={globalStats.raceCount}
       />
-      <RaceGrid races={races as any} sgLabels={SG_LABELS} sgClass={SG_CLASS} />
+      <RaceGrid
+        races={races as any}
+        sgLabels={SG_LABELS}
+        sgClass={SG_CLASS}
+        featuredRiders={featuredRiders}
+      />
     </>
   )
 }
