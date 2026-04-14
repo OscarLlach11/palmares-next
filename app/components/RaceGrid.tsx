@@ -53,47 +53,147 @@ function RidersSection() {
   const [label, setLabel] = useState('Featured Riders')
 
   useEffect(() => {
-    // Load featured riders from app_config
-    supabase.from('app_config').select('key,value').eq('key', 'featured_riders').maybeSingle()
+    // Load featured riders from app_config, using per-name ilike queries
+    // so names don't need to be exact-case matches
+    supabase
+      .from('app_config')
+      .select('key,value')
+      .eq('key', 'featured_riders')
+      .maybeSingle()
       .then(async ({ data }) => {
-        const names: string[] = Array.isArray(data?.value) ? data.value : []
-        if (!names.length) return
-        const { data: rows } = await supabase.from('startlists')
-          .select('rider_name,team_name,nationality,image_url')
-          .in('rider_name', names)
-          .order('year', { ascending: false })
-          .limit(100)
-        // Deduplicate, prefer rows with images
-        const seen = new Map<string, RiderRow>()
-        ;(rows || []).forEach((r: any) => {
-          const key = r.rider_name
-          const prev = seen.get(key)
-          if (!prev || (r.image_url && r.image_url !== 'none' && (!prev.image_url || prev.image_url === 'none'))) {
-            seen.set(key, r)
+        const entries: any[] = Array.isArray(data?.value) ? data.value : []
+        if (!entries.length) return
+
+        // Extract name — entries may be strings or {name, imageUrl} objects
+        const extractName = (e: any) =>
+          typeof e === 'object' ? (e?.name || '') : (e || '')
+        const extractConfigImg = (e: any) =>
+          typeof e === 'object' ? (e?.imageUrl || null) : null
+
+        const names = entries.map(extractName).filter(Boolean)
+
+        // Fetch each rider by ilike (exact first, then fuzzy fallback)
+        // matching the original HTML approach
+        const allRows: any[] = []
+        await Promise.all(
+          names.map(async (name: string) => {
+            // Try exact ilike match first
+            const { data: exact } = await supabase
+              .from('startlists')
+              .select('rider_name,team_name,nationality,image_url,year')
+              .ilike('rider_name', name)
+              .order('year', { ascending: false })
+              .limit(20)
+
+            if (exact?.length) {
+              exact.forEach((r: any) => allRows.push({ ...r, _searchName: name }))
+              return
+            }
+
+            // Fuzzy fallback: search by last word (surname)
+            const parts = name.trim().split(' ')
+            const surname = parts[parts.length - 1]
+            const { data: fuzzy } = await supabase
+              .from('startlists')
+              .select('rider_name,team_name,nationality,image_url,year')
+              .ilike('rider_name', `%${surname}%`)
+              .order('year', { ascending: false })
+              .limit(5)
+
+            if (fuzzy?.length) {
+              fuzzy.forEach((r: any) => allRows.push({ ...r, _searchName: name }))
+            }
+          })
+        )
+
+        // For each queried name, pick the best row:
+        // prefer row with an image, then prefer most recent year
+        const bestByName = new Map<string, any>()
+        const latestByName = new Map<string, any>()
+
+        allRows.forEach((r: any) => {
+          const key = r._searchName.toLowerCase()
+          const hasImg = r.image_url && r.image_url !== 'none'
+
+          const prev = bestByName.get(key)
+          if (!prev) {
+            bestByName.set(key, r)
+          } else {
+            const prevHasImg = prev.image_url && prev.image_url !== 'none'
+            if (hasImg && !prevHasImg) {
+              bestByName.set(key, r)
+            } else if (!hasImg && prevHasImg) {
+              // keep prev
+            } else if (r.year > prev.year) {
+              bestByName.set(key, r)
+            }
+          }
+
+          const prevLatest = latestByName.get(key)
+          if (!prevLatest || r.year > prevLatest.year) {
+            latestByName.set(key, r)
           }
         })
-        setFeatured(names.map(n => seen.get(n)).filter(Boolean) as RiderRow[])
+
+        const result: RiderRow[] = names
+          .map((name: string) => {
+            const key = name.toLowerCase()
+            const best = bestByName.get(key)
+            const latest = latestByName.get(key)
+            const entry = entries.find((e: any) => extractName(e).toLowerCase() === key)
+            const configImg = entry ? extractConfigImg(entry) : null
+
+            if (!best) {
+              // No DB match — show placeholder using the config name
+              return { rider_name: name, team_name: null, nationality: null, image_url: configImg }
+            }
+
+            const img =
+              best.image_url && best.image_url !== 'none'
+                ? best.image_url
+                : configImg || null
+
+            return {
+              rider_name: best.rider_name,
+              team_name: latest?.team_name ?? best.team_name,
+              nationality: latest?.nationality ?? best.nationality,
+              image_url: img,
+            }
+          })
+          .filter(Boolean) as RiderRow[]
+
+        setFeatured(result)
       })
   }, [])
 
+  // Search: debounced 300ms, fires on 2+ chars
   useEffect(() => {
-    if (query.length < 2) { setResults([]); setLabel('Featured Riders'); return }
+    if (query.length < 2) {
+      setResults([])
+      setLabel('Featured Riders')
+      return
+    }
     const timer = setTimeout(async () => {
       setSearching(true)
-      const { data } = await supabase.from('startlists')
-        .select('rider_name,team_name,nationality,image_url')
+      const { data } = await supabase
+        .from('startlists')
+        .select('rider_name,team_name,nationality,image_url,year')
         .ilike('rider_name', `%${query}%`)
         .order('year', { ascending: false })
         .limit(100)
-      // Deduplicate
+
+      // Deduplicate — prefer rows with images, then most recent year
       const seen = new Map<string, RiderRow>()
       ;(data || []).forEach((r: any) => {
-        const key = r.rider_name
+        const key = r.rider_name.toLowerCase()
         const prev = seen.get(key)
-        if (!prev || (r.image_url && r.image_url !== 'none' && (!prev.image_url || prev.image_url === 'none'))) {
+        const hasImg = r.image_url && r.image_url !== 'none'
+        const prevHasImg = prev?.image_url && prev.image_url !== 'none'
+        if (!prev || (hasImg && !prevHasImg) || (!prevHasImg && r.year > (prev as any).year)) {
           seen.set(key, r)
         }
       })
+
       const unique = Array.from(seen.values()).slice(0, 30)
       setResults(unique)
       setLabel(`${unique.length} result${unique.length !== 1 ? 's' : ''}`)
@@ -106,39 +206,64 @@ function RidersSection() {
 
   return (
     <div>
-      <div style={{ padding: '22px 40px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 20 }}>
+      <div style={{
+        padding: '22px 40px 12px', borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', gap: 20,
+      }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 3, marginBottom: 4 }}>Rider Database</div>
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>Search thousands of professional cyclists.</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 3, marginBottom: 4 }}>
+            Rider Database
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+            Search thousands of professional cyclists.
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search riders…"
-            style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', color: 'var(--fg)', padding: '8px 14px', fontSize: 13, width: 220, outline: 'none' }}
-          />
-        </div>
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search riders…"
+          style={{
+            background: 'var(--card-bg)', border: '1px solid var(--border)',
+            color: 'var(--fg)', padding: '8px 14px', fontSize: 13, width: 220, outline: 'none',
+          }}
+        />
       </div>
 
       <div style={{ padding: '28px 40px' }}>
-        <div style={{ fontSize: 11, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 18 }}>
+        <div style={{
+          fontSize: 11, letterSpacing: 2, textTransform: 'uppercase',
+          color: 'var(--muted)', marginBottom: 18,
+        }}>
           {searching ? 'Searching…' : label}
         </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 16 }}>
           {displayList.map(r => {
             const hasImg = r.image_url && r.image_url !== 'none'
             const col = riderColor(r.rider_name)
             const ini = riderInitials(r.rider_name)
             return (
-              <Link key={r.rider_name} href={`/riders/${encodeURIComponent(r.rider_name)}`}
-                style={{ textDecoration: 'none', display: 'block' }}>
-                <div style={{ aspectRatio: '2/3', background: col, overflow: 'hidden', position: 'relative', marginBottom: 8 }}>
+              <Link
+                key={r.rider_name}
+                href={`/riders/${encodeURIComponent(r.rider_name)}`}
+                style={{ textDecoration: 'none', display: 'block' }}
+              >
+                <div style={{
+                  aspectRatio: '2/3', background: col, overflow: 'hidden',
+                  position: 'relative', marginBottom: 8,
+                }}>
                   {hasImg ? (
-                    <img src={r.image_url!} alt={formatRiderName(r.rider_name)}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
+                    <img
+                      src={r.image_url!}
+                      alt={formatRiderName(r.rider_name)}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
+                    />
                   ) : (
-                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: '#fff' }}>
+                    <div style={{
+                      width: '100%', height: '100%', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center',
+                      fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: '#fff',
+                    }}>
                       {ini}
                     </div>
                   )}
@@ -147,7 +272,10 @@ function RidersSection() {
                   {formatRiderName(r.rider_name)}
                 </div>
                 {r.team_name && (
-                  <div style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{
+                    fontSize: 9, color: 'var(--muted)', letterSpacing: 0.5,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
                     {r.team_name}
                   </div>
                 )}
@@ -155,7 +283,9 @@ function RidersSection() {
             )
           })}
           {!searching && query.length >= 2 && results.length === 0 && (
-            <div style={{ gridColumn: '1/-1', color: 'var(--muted)', fontSize: 12 }}>No riders found for "{query}".</div>
+            <div style={{ gridColumn: '1/-1', color: 'var(--muted)', fontSize: 12 }}>
+              No riders found for "{query}".
+            </div>
           )}
         </div>
       </div>
