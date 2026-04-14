@@ -28,7 +28,6 @@ async function getRaces() {
   ])
 
   const races = racesRes.data || []
-
   const dateMap: Record<string, string> = {}
   const SORT_YEARS = [2025, 2024, 2026, 2023, 2022, 2021, 2020]
   ;(datesRes.data || []).forEach((d: any) => {
@@ -96,6 +95,7 @@ function pickBestRow(rows: any[]): FeaturedRider {
 }
 
 async function getFeaturedRiders(): Promise<FeaturedRider[]> {
+  // Get the ordered list of names from app_config
   const { data: configRow } = await supabase
     .from('app_config')
     .select('value')
@@ -108,29 +108,21 @@ async function getFeaturedRiders(): Promise<FeaturedRider[]> {
   const extractName = (e: any) => typeof e === 'object' ? (e?.name || '') : (e || '')
   const names: string[] = entries.map(extractName).filter(Boolean)
 
-  // Fetch all riders in parallel — one ilike query per name
+  // Fetch each rider with exact ilike match ONLY — no fuzzy fallback.
+  // If a name doesn't match, we show a placeholder (no wrong riders).
   const results = await Promise.all(
-    names.map(async (name) => {
-      const { data: exact } = await supabase
+    names.map(async (name): Promise<FeaturedRider> => {
+      const { data } = await supabase
         .from('startlists')
         .select('rider_name,team_name,nationality,image_url,year')
-        .ilike('rider_name', name)
+        .ilike('rider_name', name)   // exact ilike: case-insensitive but full-string match
         .order('year', { ascending: false })
         .limit(20)
 
-      if (exact?.length) return pickBestRow(exact)
+      if (data?.length) return pickBestRow(data)
 
-      // Fallback: surname-only search (first word in DB format = surname)
-      const surname = name.split(' ')[0]
-      const { data: fuzzy } = await supabase
-        .from('startlists')
-        .select('rider_name,team_name,nationality,image_url,year')
-        .ilike('rider_name', `${surname}%`)
-        .order('year', { ascending: false })
-        .limit(10)
-
-      if (fuzzy?.length) return pickBestRow(fuzzy)
-
+      // No match — return placeholder using the configured name so at least
+      // the right name shows (no wrong rider substituted)
       return { rider_name: name, team_name: null, nationality: null, image_url: null }
     })
   )
