@@ -1,5 +1,6 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useUser } from '@/app/context/UserContext'
@@ -17,13 +18,17 @@ type RaceLog = {
 }
 type Race = { slug: string; race_name: string; gradient: string; flag: string; country: string; race_type: string }
 
-export default function LogPage() {
+function LogPageInner() {
+  const searchParams = useSearchParams()
   const { user, logs: contextLogs, refreshLogs } = useUser()
   const { showToast } = useToast()
   const [loading, setLoading] = useState(true)
   const [races, setRaces] = useState<Record<string, Race>>({})
   const [filterType, setFilterType] = useState('')
   const [filterLive, setFilterLive] = useState('')
+  // FIX: initialise country + rating filters from URL params (?country=... or ?rating=...)
+  const [filterCountry, setFilterCountry] = useState(() => searchParams.get('country') || '')
+  const [filterRating, setFilterRating] = useState(() => searchParams.get('rating') || '')
   const [sortBy, setSortBy] = useState('date')
   const [search, setSearch] = useState('')
   const [openDD, setOpenDD] = useState('')
@@ -91,6 +96,16 @@ export default function LogPage() {
     if (filterType && r?.race_type !== filterType) return false
     if (filterLive === 'live' && !l.watched_live) return false
     if (filterLive === 'replay' && l.watched_live) return false
+    // FIX: apply country filter
+    if (filterCountry) {
+      const key = `${r?.flag || ''} ${r?.country || ''}`.trim()
+      if (key !== filterCountry) return false
+    }
+    // FIX: apply rating filter
+    if (filterRating) {
+      const target = parseFloat(filterRating)
+      if ((l.rating || 0) !== target) return false
+    }
     if (search) {
       const q = search.toLowerCase()
       if (!(r?.race_name || l.slug).toLowerCase().includes(q)) return false
@@ -109,7 +124,7 @@ export default function LogPage() {
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   })
 
-  const hasFilters = filterType || filterLive
+  const hasFilters = filterType || filterLive || filterCountry || filterRating
 
   return (
     <>
@@ -181,13 +196,31 @@ export default function LogPage() {
           )}
         </div>
 
+        {/* FIX: active country filter indicator */}
+        {filterCountry && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '14px 16px', fontSize: 11, color: 'var(--gold)', letterSpacing: 1, textTransform: 'uppercase' }}>
+            {filterCountry}
+            <button onClick={() => setFilterCountry('')}
+              style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1 }}>✕</button>
+          </div>
+        )}
+
+        {/* FIX: active rating filter indicator */}
+        {filterRating && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '14px 16px', fontSize: 11, color: 'var(--gold)', letterSpacing: 1, textTransform: 'uppercase' }}>
+            ★ {filterRating}
+            <button onClick={() => setFilterRating('')}
+              style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1 }}>✕</button>
+          </div>
+        )}
+
         {/* Search */}
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
           onClick={e => e.stopPropagation()}
           style={{ marginLeft: 'auto', background: 'var(--card-bg)', border: '1px solid var(--border)', color: 'var(--fg)', padding: '6px 12px', fontSize: 12, outline: 'none', width: 180 }} />
 
         {hasFilters && (
-          <button onClick={() => { setFilterType(''); setFilterLive('') }}
+          <button onClick={() => { setFilterType(''); setFilterLive(''); setFilterCountry(''); setFilterRating('') }}
             style={{ marginLeft: 12, fontSize: 10, letterSpacing: 1, color: 'var(--gold)', background: 'none', border: '1px solid var(--gold-dim)', padding: '5px 12px', cursor: 'pointer' }}>
             ✕ Clear
           </button>
@@ -227,19 +260,16 @@ export default function LogPage() {
 
               {/* Rating */}
               {l.rating ? (
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: 'var(--gold)', lineHeight: 1 }}>{l.rating.toFixed(1)}</div>
-                  <div style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 1 }}>/ 5.0</div>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: 'var(--gold)', flexShrink: 0 }}>
+                  ★ {l.rating}
                 </div>
               ) : (
-                <div style={{ width: 40 }} />
+                <div style={{ fontSize: 11, color: 'var(--border-light)', flexShrink: 0 }}>—</div>
               )}
 
-              {/* Edit button */}
-              <button
-                onClick={() => openEdit(l.slug)}
-                className="bs"
-                style={{ fontSize: 9, padding: '5px 10px', flexShrink: 0 }}>
+              {/* Edit */}
+              <button onClick={() => openEdit(l.slug)}
+                style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', padding: '4px 10px', fontSize: 10, letterSpacing: 1, cursor: 'pointer', flexShrink: 0 }}>
                 Edit
               </button>
             </div>
@@ -249,49 +279,18 @@ export default function LogPage() {
 
       {/* Danger zone */}
       {allLogs.length > 0 && (
-        <div style={{ padding: '40px 40px 60px', borderTop: '1px solid var(--border)', marginTop: 24 }}>
-          <div style={{ fontSize: 10, letterSpacing: 2, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 12 }}>Danger Zone</div>
-          <button
-            onClick={() => setConfirmClear(true)}
-            style={{ fontSize: 10, letterSpacing: 1, color: '#c0392b', background: 'none', border: '1px solid #c0392b44', padding: '7px 16px', cursor: 'pointer', textTransform: 'uppercase' }}>
+        <div style={{ margin: '60px 40px 40px', padding: 24, border: '1px solid #3a1a1a', background: '#1a0a0a' }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, letterSpacing: 2, color: '#c0392b', marginBottom: 8 }}>Danger Zone</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>Permanently delete all your race logs. This cannot be undone.</div>
+          <button onClick={() => setConfirmClear(true)}
+            style={{ background: 'none', border: '1px solid #c0392b', color: '#c0392b', padding: '8px 20px', fontSize: 11, letterSpacing: 1, cursor: 'pointer' }}>
             Clear All Logs
           </button>
         </div>
       )}
     </div>
 
-    {/* Confirm clear modal */}
-    {confirmClear && (
-      <div
-        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
-        onClick={() => setConfirmClear(false)}
-      >
-        <div
-          style={{ background: 'var(--bg)', border: '1px solid #c0392b66', width: '100%', maxWidth: 400, padding: 32 }}
-          onClick={e => e.stopPropagation()}
-        >
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 2, marginBottom: 12 }}>Clear All Logs?</div>
-          <p style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 24 }}>
-            This will permanently delete all <strong style={{ color: 'var(--fg)' }}>{allLogs.length} race log{allLogs.length !== 1 ? 's' : ''}</strong> from your journal. This cannot be undone.
-          </p>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button
-              onClick={() => setConfirmClear(false)}
-              className="bs"
-              style={{ flex: 1, fontSize: 10, padding: '9px 0' }}>
-              Cancel
-            </button>
-            <button
-              onClick={confirmClearAll}
-              disabled={clearing}
-              style={{ flex: 1, fontSize: 10, letterSpacing: 1, padding: '9px 0', background: '#c0392b', color: '#fff', border: 'none', cursor: clearing ? 'not-allowed' : 'pointer', opacity: clearing ? 0.6 : 1, textTransform: 'uppercase' }}>
-              {clearing ? 'Clearing…' : 'Yes, Delete All'}
-            </button>
-          </div>
-        </div>
-      </div>
-    )}
-
+    {/* Edit modal */}
     {editModal && (
       <LogRaceModal
         slug={editModal.slug}
@@ -301,6 +300,36 @@ export default function LogPage() {
         onClose={() => { setEditModal(null); refreshLogs() }}
       />
     )}
+
+    {/* Confirm clear modal */}
+    {confirmClear && (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', padding: 32, maxWidth: 400, width: '90%' }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 2, marginBottom: 12 }}>Clear All Logs?</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 24, lineHeight: 1.6 }}>
+            This will permanently delete all {allLogs.length} race log{allLogs.length !== 1 ? 's' : ''}. This action cannot be undone.
+          </div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button onClick={() => setConfirmClear(false)}
+              style={{ flex: 1, background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', padding: '10px 0', fontSize: 12, cursor: 'pointer' }}>
+              Cancel
+            </button>
+            <button onClick={confirmClearAll} disabled={clearing}
+              style={{ flex: 1, background: '#c0392b', border: 'none', color: '#fff', padding: '10px 0', fontSize: 12, cursor: 'pointer', opacity: clearing ? 0.6 : 1 }}>
+              {clearing ? 'Clearing…' : 'Yes, Delete All'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     </>
+  )
+}
+
+export default function LogPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 40, color: 'var(--muted)' }}>Loading…</div>}>
+      <LogPageInner />
+    </Suspense>
   )
 }
