@@ -84,15 +84,17 @@ export default function MembersPage() {
     if (!searchQ.trim()) { setSearchResults(null); return }
     setSearching(true)
     const [byName, byHandle] = await Promise.all([
-      supabase.from('profiles').select('user_id,display_name,handle,avatar_url').ilike('display_name', `%${searchQ}%`).limit(20),
-      supabase.from('profiles').select('user_id,display_name,handle,avatar_url').ilike('handle', `%${searchQ}%`).limit(20),
+      supabase.from('profiles').select('user_id,display_name,handle,avatar_url,fav_riders').ilike('display_name', `%${searchQ}%`).limit(20),
+      supabase.from('profiles').select('user_id,display_name,handle,avatar_url,fav_riders').ilike('handle', `%${searchQ}%`).limit(20),
     ])
     const seen = new Set()
     const combined = [...(byName.data || []), ...(byHandle.data || [])].filter((p: any) => {
       if (seen.has(p.user_id)) return false
       seen.add(p.user_id); return true
     })
-    setSearchResults(combined.map((p: any) => ({ ...p, followerCount: 0, fav_riders: [] })))
+    const withCounts = combined.map((p: any) => ({ ...p, followerCount: 0 }))
+    const enriched = await enrichWithRiderImages(withCounts)
+    setSearchResults(enriched)
     setSearching(false)
   }
 
@@ -150,18 +152,21 @@ export default function MembersPage() {
               const ini = (m.display_name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
               const isFollowing = followingIds.has(m.user_id)
               const isMe = user?.id === m.user_id
+              // FIX: guard against null handle
+              const profileHref = m.handle ? `/profile/${m.handle}` : '#'
               return (
-                <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                  onClick={() => window.location.href = `/profile/${m.handle}`}>
-                  <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--card-bg)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, overflow: 'hidden', flexShrink: 0 }}>
-                    {m.avatar_url ? <img src={m.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : ini}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{m.display_name || 'Cyclist'}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>@{m.handle || 'cyclist'}</div>
-                  </div>
+                <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
+                  <Link href={profileHref} style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, textDecoration: 'none' }}>
+                    <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--card-bg)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, overflow: 'hidden', flexShrink: 0 }}>
+                      {m.avatar_url ? <img src={m.avatar_url} alt={m.display_name || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : ini}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--fg)' }}>{m.display_name || 'Cyclist'}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>@{m.handle || 'cyclist'}</div>
+                    </div>
+                  </Link>
                   {!isMe && user && (
-                    <button onClick={e => { e.stopPropagation(); toggleFollow(m.user_id) }}
+                    <button onClick={() => toggleFollow(m.user_id)}
                       className={`follow-btn ${isFollowing ? 'following' : 'follow'}`}>
                       {isFollowing ? 'Following' : 'Follow'}
                     </button>
@@ -180,13 +185,15 @@ export default function MembersPage() {
               const isFollowing = followingIds.has(m.user_id)
               const isMe = user?.id === m.user_id
               const riders = (m.ridersWithImages || []).slice(0, 4)
+              // FIX: guard against null handle — use Link instead of window.location
+              const profileHref = m.handle ? `/profile/${m.handle}` : '#'
 
               return (
-                <div key={m.user_id} className="member-card" onClick={() => window.location.href = `/profile/${m.handle}`} style={{ cursor: 'pointer' }}>
-                  <div className="member-avatar-lg" onClick={e => { e.stopPropagation(); window.location.href = `/profile/${m.handle}` }}>
+                <Link key={m.user_id} href={profileHref} className="member-card" style={{ textDecoration: 'none', display: 'block' }}>
+                  <div className="member-avatar-lg">
                     {m.avatar_url ? <img src={m.avatar_url} alt={m.display_name || ''} /> : ini}
                   </div>
-                  <div className="member-name" onClick={e => { e.stopPropagation(); window.location.href = `/profile/${m.handle}` }}>
+                  <div className="member-name">
                     {(m.display_name || 'Cyclist').toUpperCase()}
                   </div>
                   <div className="member-handle">@{m.handle || 'cyclist'}</div>
@@ -197,7 +204,8 @@ export default function MembersPage() {
                   )}
 
                   {!isMe && user ? (
-                    <button onClick={e => { e.stopPropagation(); toggleFollow(m.user_id) }}
+                    <button
+                      onClick={e => { e.preventDefault(); e.stopPropagation(); toggleFollow(m.user_id) }}
                       className={`follow-btn ${isFollowing ? 'following' : 'follow'}`}
                       style={{ width: '100%', marginBottom: 14 }}>
                       {isFollowing ? 'Following' : 'Follow'}
@@ -209,10 +217,9 @@ export default function MembersPage() {
                       const col = riderColor(r.name)
                       const ini2 = riderInitials(r.name)
                       return (
-                        <div key={r.name} className="member-rider-slot" title={r.name}
-                          onClick={e => { e.stopPropagation(); window.location.href = `/riders/${encodeURIComponent(r.name)}` }}>
+                        <div key={r.name} className="member-rider-slot" title={r.name}>
                           {r.image_url && r.image_url !== 'none'
-                            ? <img src={r.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                            ? <img src={r.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
                             : <div className="member-rider-initials" style={{ background: col }}>{ini2}</div>}
                         </div>
                       )
@@ -221,7 +228,7 @@ export default function MembersPage() {
                       <div key={i} className="member-rider-slot" style={{ background: 'var(--border)', opacity: 0.3 }} />
                     ))}
                   </div>
-                </div>
+                </Link>
               )
             })}
           </div>
