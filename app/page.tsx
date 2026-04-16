@@ -42,7 +42,7 @@ async function getRaces() {
   })
 
   const isWT = (r: any) => r.tier === 'WT'
-  const isChamp = (r: any) => r.race_type === 'championship'
+  const isChamp = (r: any) => (r.race_name || '').toLowerCase().includes('championships')
 
   return [...races].sort((a: any, b: any) => {
     if (isChamp(a) && !isChamp(b)) return 1
