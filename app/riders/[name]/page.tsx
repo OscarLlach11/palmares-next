@@ -95,23 +95,28 @@ export default function RiderPage() {
       })
     }
 
+    // Use the exact DB name as returned by the startlists query for all downstream lookups.
+    // This is critical: rider_wins.rider_name and stage_results.winner may not match
+    // the URL-encoded name exactly, so we always use the canonical DB name.
     const dbName = slRows?.[0]?.rider_name || riderName
 
-    // Get wins from rider_wins
+    // FIX: use .ilike() instead of .eq() so the lookup is case-insensitive.
+    // rider_wins.rider_name may be stored in a different case than what the
+    // startlists query returned, causing zero results with a strict .eq() match.
     const { data: wins } = await supabase
       .from('rider_wins')
       .select('race_slug,year')
-      .eq('rider_name', dbName)
+      .ilike('rider_name', dbName)
       .order('year', { ascending: false })
 
-    // Get stage wins
+    // FIX: same as above — stage_results.winner must be matched case-insensitively.
     const { data: stageWins } = await supabase
       .from('stage_results')
       .select('race_slug,year,stage_num,stage_label')
-      .eq('winner', dbName)
+      .ilike('winner', dbName)
       .order('year', { ascending: false })
 
-    // Get all race slugs involved
+    // Get all race slugs involved in trophies so we can look up race metadata
     const slugs = [...new Set([
       ...(wins || []).map((w: any) => w.race_slug),
       ...(stageWins || []).map((s: any) => s.race_slug),
@@ -126,7 +131,7 @@ export default function RiderPage() {
       ;(raceData || []).forEach((r: any) => { raceMap[r.slug] = r })
     }
 
-    // Build trophies
+    // Build trophies list
     const trophyList: Trophy[] = [
       ...(wins || []).map((w: any) => ({
         slug: w.race_slug, year: w.year,
@@ -148,30 +153,52 @@ export default function RiderPage() {
     ].sort((a, b) => b.year - a.year)
     setTrophies(trophyList)
 
-    // Get all race appearances from startlists
+    // FIX: use .ilike() for the appearances query too, consistent with the
+    // info lookup above. Also select slug (not race_slug) — startlists uses
+    // the column name 'slug' for the race identifier in the appearances context.
+    // We fetch both slug and race_slug defensively and prefer whichever is populated.
     const { data: appearances } = await supabase
       .from('startlists')
-      .select('race_slug,year')
-      .eq('rider_name', dbName)
+      .select('slug,race_slug,year')
+      .ilike('rider_name', dbName)
       .order('year', { ascending: false })
 
-    const appSlugs = [...new Set((appearances || []).map((a: any) => a.race_slug))]
+    // Normalise: some rows may have 'race_slug', others 'slug' — handle both
+    const normAppearances = (appearances || []).map((a: any) => ({
+      race_slug: a.race_slug || a.slug,
+      year: a.year,
+    }))
+
+    const appSlugs = [...new Set(normAppearances.map((a: any) => a.race_slug).filter(Boolean))]
+
     let appRaceMap: Record<string, any> = { ...raceMap }
-    const missing = appSlugs.filter(s => !appRaceMap[s])
+    const missing = appSlugs.filter((s: string) => !appRaceMap[s])
     if (missing.length) {
       const { data: moreRaces } = await supabase
         .from('races').select('slug,race_name,gradient,flag,race_type').in('slug', missing)
       ;(moreRaces || []).forEach((r: any) => { appRaceMap[r.slug] = r })
     }
 
-    const raceList: RaceEntry[] = (appearances || []).map((a: any) => ({
-      slug: a.race_slug, year: a.year,
-      position: null,
-      race_name: appRaceMap[a.race_slug]?.race_name || a.race_slug,
-      gradient: appRaceMap[a.race_slug]?.gradient || '#1a1a1a',
-      flag: appRaceMap[a.race_slug]?.flag || '',
-      race_type: appRaceMap[a.race_slug]?.race_type || '',
-    }))
+    // Deduplicate appearances by slug+year so a rider who appears multiple
+    // times in a startlist table for the same race (e.g. one row per stage)
+    // is only counted once. This fixes the "races" count in the header.
+    const seen = new Set<string>()
+    const raceList: RaceEntry[] = []
+    for (const a of normAppearances) {
+      const key = `${a.race_slug}|${a.year}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      raceList.push({
+        slug: a.race_slug,
+        year: a.year,
+        position: null,
+        race_name: appRaceMap[a.race_slug]?.race_name || a.race_slug,
+        gradient: appRaceMap[a.race_slug]?.gradient || '#1a1a1a',
+        flag: appRaceMap[a.race_slug]?.flag || '',
+        race_type: appRaceMap[a.race_slug]?.race_type || '',
+      })
+    }
+
     setRaces(raceList)
     setLoading(false)
   }
