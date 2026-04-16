@@ -78,6 +78,7 @@ type FeaturedRider = {
 }
 
 async function getFeaturedRiders(): Promise<FeaturedRider[]> {
+  // 1. Load the list of names from app_config
   const { data: configRow } = await supabase
     .from('app_config')
     .select('value')
@@ -89,47 +90,93 @@ async function getFeaturedRiders(): Promise<FeaturedRider[]> {
 
   const extractName = (e: any) => typeof e === 'object' ? (e?.name || '') : (e || '')
   const names: string[] = entries.map(extractName).filter(Boolean)
+  if (!names.length) return []
 
-  const results = await Promise.all(
-    names.map(async (name): Promise<FeaturedRider> => {
-      // Run two queries in parallel:
-      // 1. Most recent row with an actual image (not null, not 'none')
-      // 2. Most recent row overall (for team name — which is freshest in 2026)
-      const [withImageRes, latestRes] = await Promise.all([
+  // 2. Single batch fetch: all rows matching any of the names.
+  //    We fetch all years so we can pick the best image (any year) and
+  //    the latest team name separately.
+  //    Using .in() does a case-SENSITIVE exact match in Postgres, which is
+  //    correct here because the names in app_config should exactly match
+  //    the rider_name values in startlists (that's the contract).
+  const { data: allRows } = await supabase
+    .from('startlists')
+    .select('rider_name,team_name,nationality,image_url,year')
+    .in('rider_name', names)
+    .order('year', { ascending: false })
+    .limit(1000)
+
+  // 3. Group all returned rows by their lowercase name for fast lookup
+  const grouped = new Map<string, any[]>()
+  for (const row of allRows || []) {
+    const key = row.rider_name.toLowerCase()
+    if (!grouped.has(key)) grouped.set(key, [])
+    grouped.get(key)!.push(row)
+  }
+
+  // 4. For any name that returned zero rows, the name in app_config doesn't
+  //    exactly match startlists.rider_name (different casing, extra space, etc).
+  //    Fall back to a case-insensitive wildcard search for those names only.
+  const unresolved = names.filter(n => !grouped.has(n.toLowerCase()))
+  if (unresolved.length > 0) {
+    // Run fallback lookups in parallel — one ilike per unresolved name
+    const fallbackResults = await Promise.all(
+      unresolved.map(name =>
         supabase
           .from('startlists')
           .select('rider_name,team_name,nationality,image_url,year')
-          .ilike('rider_name', name)
-          .not('image_url', 'is', null)
-          .neq('image_url', 'none')
+          .ilike('rider_name', `%${name.trim()}%`)
           .order('year', { ascending: false })
-          .limit(1),
-        supabase
-          .from('startlists')
-          .select('rider_name,team_name,nationality,year')
-          .ilike('rider_name', name)
-          .order('year', { ascending: false })
-          .limit(1),
-      ])
-
-      const imageRow = withImageRes.data?.[0] || null
-      const latestRow = latestRes.data?.[0] || null
-
-      if (!latestRow && !imageRow) {
-        // Name not in DB at all — show placeholder
-        return { rider_name: name, team_name: null, nationality: null, image_url: null }
+          .limit(20)
+      )
+    )
+    for (const res of fallbackResults) {
+      for (const row of res.data || []) {
+        const key = row.rider_name.toLowerCase()
+        if (!grouped.has(key)) grouped.set(key, [])
+        grouped.get(key)!.push(row)
       }
+    }
+  }
 
-      return {
-        rider_name: latestRow?.rider_name || imageRow?.rider_name || name,
-        team_name: latestRow?.team_name || null,         // freshest team
-        nationality: latestRow?.nationality || imageRow?.nationality || null,
-        image_url: imageRow?.image_url || null,          // best image (may be from older year)
+  // 5. For each name in the original ordered list, pick the best image
+  //    and the most recent team name from all rows for that rider.
+  return names.map((name): FeaturedRider => {
+    // Try exact key first, then case-insensitive search in grouped map
+    const key = name.toLowerCase()
+    let rows = grouped.get(key)
+
+    // If exact key not found (because fallback added it under a different key),
+    // find the best matching key in the grouped map
+    if (!rows) {
+      for (const [k, v] of grouped.entries()) {
+        if (k.includes(key) || key.includes(k)) {
+          rows = v
+          break
+        }
       }
-    })
-  )
+    }
 
-  return results
+    if (!rows || !rows.length) {
+      // Name genuinely not in DB — show a placeholder card
+      return { rider_name: name, team_name: null, nationality: null, image_url: null }
+    }
+
+    // Best image: prefer rows with a non-null, non-'none' image_url, then pick most recent year
+    const withImage = rows
+      .filter(r => r.image_url && r.image_url !== 'none')
+      .sort((a, b) => (b.year || 0) - (a.year || 0))
+
+    // Latest row overall (for freshest team name)
+    const latest = rows.reduce((a, b) => ((b.year || 0) > (a.year || 0) ? b : a), rows[0])
+    const imageRow = withImage[0] || null
+
+    return {
+      rider_name: latest.rider_name,
+      team_name: latest.team_name || null,
+      nationality: latest.nationality || null,
+      image_url: imageRow?.image_url || null,
+    }
+  })
 }
 
 export default async function DiscoverPage() {
