@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 import StageComments from '@/app/components/StageComments'
 import LogStageButton from '@/app/components/LogStageButton'
 
-export const revalidate = 3600
+export const revalidate = 0
 
 async function getData(slug: string, year: number, stageNum: number) {
   const [raceRes, stageRes, allStagesRes] = await Promise.all([
@@ -15,11 +15,15 @@ async function getData(slug: string, year: number, stageNum: number) {
   return { race: raceRes.data, stage: stageRes.data, allStages: allStagesRes.data || [] }
 }
 
+// Names are now stored as "Firstname Lastname" — no transformation needed.
 function formatRiderName(name: string | null | undefined): string {
-  if (!name) return ''
-  return name.split(' ').map(w =>
-    w === w.toUpperCase() && w.length > 1 ? w.charAt(0) + w.slice(1).toLowerCase() : w
-  ).join(' ')
+  return name || ''
+}
+
+// Safely extract name from either a plain string or a legacy {rider, time} object
+function extractName(entry: any): string {
+  if (typeof entry === 'string') return entry
+  return entry?.rider || entry?.rider_name || entry?.name || ''
 }
 
 export default async function StagePage({ params }: { params: { slug: string; year: string; num: string } }) {
@@ -29,12 +33,16 @@ export default async function StagePage({ params }: { params: { slug: string; ye
 
   if (!race) notFound()
 
-  // Safely normalise array fields — some DB rows store these as objects or null
-  const top10: string[] = Array.isArray(stage?.top10) ? stage.top10 : []
-  const gcTop5: string[] = Array.isArray(stage?.gc_top5) ? stage.gc_top5 : []
+  // Extract names safely — handles both plain string arrays and legacy object arrays
+  const top10: string[] = Array.isArray(stage?.top10)
+    ? stage.top10.map(extractName).filter(Boolean)
+    : []
+  const gcTop5: string[] = Array.isArray(stage?.gc_top5)
+    ? stage.gc_top5.map(extractName).filter(Boolean)
+    : []
 
-  const prevStage = allStages.find(s => s.stage_num === stageNum - 1)
-  const nextStage = allStages.find(s => s.stage_num === stageNum + 1)
+  const prevStage = allStages.find((s: any) => s.stage_num === stageNum - 1)
+  const nextStage = allStages.find((s: any) => s.stage_num === stageNum + 1)
 
   const label = stageNum === 0 ? 'Prologue' : `Stage ${stage?.stage_label || stageNum}`
 
@@ -130,9 +138,7 @@ export default async function StagePage({ params }: { params: { slug: string; ye
               {gcTop5.length > 0 && (
                 <div className="rsp-section">
                   <div className="rsp-st">GC After Stage</div>
-                  {gcTop5.slice(0, 5).map((entry: any, i: number) => {
-                    const name = typeof entry === 'string' ? entry : (entry?.rider || entry?.rider_name || '')
-                    const time = typeof entry === 'object' ? (entry?.time || entry?.gap || '') : ''
+                  {gcTop5.slice(0, 5).map((name: string, i: number) => {
                     if (!name) return null
                     return (
                       <div key={i} className="top10-row">
@@ -140,7 +146,6 @@ export default async function StagePage({ params }: { params: { slug: string; ye
                         <Link href={`/riders/${encodeURIComponent(name)}`} style={{ fontSize: 13, flex: 1, textDecoration: 'none', color: 'inherit' }}>
                           {formatRiderName(name)}
                         </Link>
-                        {time && <span style={{ fontSize: 10, color: 'var(--muted)' }}>{time}</span>}
                       </div>
                     )
                   })}
@@ -192,9 +197,7 @@ export default async function StagePage({ params }: { params: { slug: string; ye
             <>
               <div className="rsp-st">Top 10</div>
               <div style={{ marginBottom: 24 }}>
-                {top10.slice(0, 10).map((entry: any, i: number) => {
-                  const name = typeof entry === 'string' ? entry : (entry?.rider || entry?.rider_name || '')
-                  const gap = typeof entry === 'object' ? (entry?.gap || entry?.time || '') : ''
+                {top10.slice(0, 10).map((name: string, i: number) => {
                   if (!name) return null
                   return (
                     <div key={i} className="top10-row">
@@ -202,7 +205,6 @@ export default async function StagePage({ params }: { params: { slug: string; ye
                       <Link href={`/riders/${encodeURIComponent(name)}`} style={{ fontSize: 13, flex: 1, textDecoration: 'none', color: 'inherit' }}>
                         {formatRiderName(name)}
                       </Link>
-                      {gap && <span style={{ fontSize: 10, color: 'var(--muted)' }}>{gap}</span>}
                     </div>
                   )
                 })}
@@ -210,13 +212,15 @@ export default async function StagePage({ params }: { params: { slug: string; ye
             </>
           )}
 
-          {/* Stage winner callout in sidebar */}
+          {/* Stage winner callout in sidebar when no top10 */}
           {stage?.winner && top10.length === 0 && (
             <>
               <div className="rsp-st">Stage Winner</div>
-              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 17, marginBottom: 4, color: 'var(--gold)' }}>
-                {formatRiderName(stage.winner)}
-              </div>
+              <Link href={`/riders/${encodeURIComponent(stage.winner)}`} style={{ textDecoration: 'none' }}>
+                <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 17, marginBottom: 4, color: 'var(--gold)' }}>
+                  {formatRiderName(stage.winner)}
+                </div>
+              </Link>
               {stage.winner_team && (
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 20 }}>{stage.winner_team}</div>
               )}
@@ -228,7 +232,7 @@ export default async function StagePage({ params }: { params: { slug: string; ye
             <div style={{ marginTop: top10.length > 0 ? 0 : 0 }}>
               <div className="rsp-st">All Stages</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                {allStages.map(s => (
+                {allStages.map((s: any) => (
                   <Link key={s.stage_num} href={`/races/${params.slug}/${year}/stages/${s.stage_num}`}
                     style={{
                       padding: '6px 10px', fontSize: 11, textDecoration: 'none',
