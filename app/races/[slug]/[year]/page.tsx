@@ -9,12 +9,44 @@ import { formatRiderName } from '@/lib/utils'
 
 export const revalidate = 3600
 
+// ── Stage type visual config ──────────────────────────────────────────────────
+// Mirrors the original index.html TYPE_COL / TYPE_ICON / TYPE_LABEL maps exactly.
+
+const STAGE_TYPE_COLOR: Record<string, string> = {
+  mountain: '#c0392b',
+  tt:       '#1a3a8c',
+  ttt:      '#1a3a8c',
+  cobbled:  '#7b5e2a',
+  sprint:   '#1a5c2a',
+  hilly:    '#4a4a4a',
+}
+
+const STAGE_TYPE_ICON: Record<string, string> = {
+  mountain: '⛰',
+  tt:       '⏱',
+  ttt:      '⏱⏱',
+  cobbled:  '◫',
+  sprint:   '━',
+  hilly:    '∧',
+}
+
+const STAGE_TYPE_LABEL: Record<string, string> = {
+  mountain: 'Mountain',
+  tt:       'Time Trial',
+  ttt:      'Team TT',
+  cobbled:  'Cobbled',
+  sprint:   'Sprint',
+  hilly:    'Hilly',
+}
+
+// ── Data fetching ─────────────────────────────────────────────────────────────
+
 async function getData(slug: string, year: number) {
   const [raceRes, resultRes, stagesRes, reviewsRes, availYearsRes] = await Promise.all([
     supabase.from('races').select('*').eq('slug', slug).single(),
     supabase.from('race_results').select('*').eq('slug', slug).eq('year', year).maybeSingle(),
     supabase.from('stage_results')
-      .select('stage_num, stage_label, stage_date, stage_type, distance_km, winner, winner_team')
+      .select('stage_num, stage_label, stage_date, stage_type, distance_km, winner, winner_team, departure, arrival')
       .eq('race_slug', slug).eq('year', year).order('stage_num'),
     supabase.from('race_logs')
       .select('user_id, rating, review, date_watched, created_at, profiles(display_name, handle, avatar_url)')
@@ -25,15 +57,8 @@ async function getData(slug: string, year: number) {
   ])
 
   let result = resultRes.data
-
-  // Fallback: try race_slug column if slug column returned nothing
   if (!result) {
-    const fallback = await supabase
-      .from('race_results')
-      .select('*')
-      .eq('race_slug', slug)
-      .eq('year', year)
-      .maybeSingle()
+    const fallback = await supabase.from('race_results').select('*').eq('race_slug', slug).eq('year', year).maybeSingle()
     result = fallback.data
   }
 
@@ -46,10 +71,6 @@ async function getData(slug: string, year: number) {
   }
 }
 
-// Extract the rider name string from a top10 entry.
-// The DB stores top10 as either plain strings ("POGACAR Tadej") or
-// objects ({ rider: "POGACAR Tadej", time: "...", gap: "..." }).
-// This matches the original index.html handling exactly.
 function extractTop10Name(entry: any): string {
   if (typeof entry === 'string') return entry
   return entry?.rider || entry?.rider_name || ''
@@ -60,6 +81,8 @@ function extractTop10Gap(entry: any): string {
   return entry.gap || entry.time || ''
 }
 
+// ── Component ─────────────────────────────────────────────────────────────────
+
 export default async function EditionPage({ params }: { params: { slug: string; year: string } }) {
   const year = parseInt(params.year)
   const { race, result, stages, reviews, availYears } = await getData(params.slug, year)
@@ -69,20 +92,28 @@ export default async function EditionPage({ params }: { params: { slug: string; 
     ? ['Grand Tour', 'Stage Race'].includes(race.race_type)
     : false
 
-  // top10 can be string[] or object[] — normalise to raw DB name strings
   const rawTop10: any[] = Array.isArray(result?.top10) ? result.top10 : []
-
   const prevYear = availYears.find((y: number) => y < year)
   const nextYear = [...availYears].reverse().find((y: number) => y > year)
-
   const avgRating = reviews.length > 0
     ? (reviews.reduce((s: number, r: any) => s + (r.rating || 0), 0) / reviews.length).toFixed(1)
     : null
 
+  // Count stage types for the legend
+  const typeCounts: Record<string, number> = {}
+  for (const s of stages) {
+    const t = (s as any).stage_type || 'hilly'
+    typeCounts[t] = (typeCounts[t] || 0) + 1
+  }
+
   return (
     <div>
-      {/* Header bar */}
-      <div style={{ background: 'var(--bg)', padding: '12px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      {/* ── Header bar ──────────────────────────────────────────────────────── */}
+      <div style={{
+        background: 'var(--bg)', padding: '12px 24px',
+        borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+      }}>
         <Link href={`/races/${params.slug}`} className="bs" style={{ textDecoration: 'none', fontSize: 10 }}>← Back</Link>
         <div style={{ fontSize: 10, letterSpacing: 2, color: 'var(--muted)', textTransform: 'uppercase', flex: 1 }}>
           {race.race_name}
@@ -97,7 +128,9 @@ export default async function EditionPage({ params }: { params: { slug: string; 
       </div>
 
       <div className="race-sub-layout">
+        {/* ── Main column ───────────────────────────────────────────────────── */}
         <div className="rsp-main">
+
           {/* Banner */}
           <div className="rsp-banner" style={{ background: race.gradient || '#1a1a1a' }}>
             {race.logo_url && (
@@ -110,7 +143,7 @@ export default async function EditionPage({ params }: { params: { slug: string; 
             </div>
           </div>
 
-          {/* Winner — always uses formatRiderName to flip to "First Last" */}
+          {/* Winner */}
           {rawTop10[0] && extractTop10Name(rawTop10[0]) && (
             <div className="rsp-section">
               <div className="rsp-st">Winner</div>
@@ -122,7 +155,7 @@ export default async function EditionPage({ params }: { params: { slug: string; 
             </div>
           )}
 
-          {/* Log + Watchlist buttons */}
+          {/* Log + Watchlist */}
           <div className="rsp-section" style={{ paddingTop: 0, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <LogEditionButton
               slug={params.slug}
@@ -134,24 +167,106 @@ export default async function EditionPage({ params }: { params: { slug: string; 
             <WatchlistButton slug={params.slug} />
           </div>
 
-          {/* Stages */}
+          {/* ── STAGE CARD GRID ──────────────────────────────────────────── */}
           {isStageRace && stages.length > 0 && (
             <div className="rsp-section">
-              <div className="rsp-st">Stages</div>
-              <div className="stage-list">
-                {stages.map((s: any) => (
-                  <Link key={s.stage_num} href={`/races/${params.slug}/${year}/stages/${s.stage_num}`}
-                    className="srow" style={{ textDecoration: 'none' }}>
-                    <span className="snum">{s.stage_num === 0 ? 'P' : s.stage_num}</span>
-                    <div className="sinfo">
-                      <div className="sname">{s.stage_label || `Stage ${s.stage_num}`}</div>
-                      <div className="sdate">
-                        {s.winner ? formatRiderName(s.winner) : (s.stage_date || '')}
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, marginBottom: 20 }}>
+                <div className="rsp-st" style={{ marginBottom: 0 }}>Stages</div>
+                <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: 1 }}>
+                  {stages.length} stage{stages.length !== 1 ? 's' : ''}
+                </div>
+              </div>
+
+              {/* Type legend — only show types that actually appear */}
+              {Object.keys(typeCounts).filter(t => t !== 'hilly').length > 0 && (
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+                  {Object.entries(typeCounts)
+                    .filter(([t]) => t !== 'hilly')
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([type, count]) => (
+                      <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <div style={{
+                          width: 10, height: 10, borderRadius: 1,
+                          background: STAGE_TYPE_COLOR[type] || '#444',
+                          flexShrink: 0,
+                        }} />
+                        <span style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--muted)' }}>
+                          {STAGE_TYPE_LABEL[type] || type} ({count})
+                        </span>
                       </div>
-                    </div>
-                    {s.distance_km && <span style={{ fontSize: 10, color: 'var(--muted)' }}>{s.distance_km}km</span>}
-                  </Link>
-                ))}
+                    ))
+                  }
+                </div>
+              )}
+
+              {/* Card grid */}
+              <div className="stage-card-grid">
+                {stages.map((s: any) => {
+                  const stageType = s.stage_type || 'hilly'
+                  const typeColor = STAGE_TYPE_COLOR[stageType] || '#4a4a4a'
+                  const typeIcon  = STAGE_TYPE_ICON[stageType]  || ''
+                  const typeLabel = STAGE_TYPE_LABEL[stageType] || ''
+                  const isPrologue = s.stage_num === 0
+                  const stageLabel = isPrologue ? 'Prologue' : `Stage ${s.stage_label || s.stage_num}`
+
+                  return (
+                    <Link
+                      key={s.stage_num}
+                      href={`/races/${params.slug}/${year}/stages/${s.stage_num}`}
+                      className="stage-card"
+                      style={{ textDecoration: 'none' }}
+                    >
+                      {/* Coloured type bar along the top */}
+                      <div className="stage-card-bar" style={{ background: typeColor }} />
+
+                      <div className="stage-card-inner">
+                        {/* Stage number + type badge */}
+                        <div className="stage-card-header">
+                          <span className="stage-card-num"
+                            style={{ color: isPrologue ? 'var(--gold)' : 'var(--fg)' }}>
+                            {stageLabel}
+                          </span>
+                          {typeLabel && (
+                            <span className="stage-card-type-badge"
+                              style={{ color: typeColor, borderColor: `${typeColor}40` }}>
+                              {typeIcon} {typeLabel}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Route */}
+                        {s.departure && s.arrival ? (
+                          <div className="stage-card-route">
+                            <span>{s.departure}</span>
+                            <span className="stage-card-arrow">→</span>
+                            <span>{s.arrival}</span>
+                          </div>
+                        ) : s.stage_date ? (
+                          <div className="stage-card-route" style={{ color: 'var(--muted)' }}>
+                            {new Date(s.stage_date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                          </div>
+                        ) : null}
+
+                        {/* Distance */}
+                        {s.distance_km && (
+                          <div className="stage-card-distance">
+                            {s.distance_km} <span style={{ fontSize: 9, opacity: 0.6 }}>km</span>
+                          </div>
+                        )}
+
+                        {/* Winner — the headline element */}
+                        {s.winner ? (
+                          <div className="stage-card-winner">
+                            <span className="stage-card-winner-icon" style={{ color: typeColor }}>★</span>
+                            <span className="stage-card-winner-name">{formatRiderName(s.winner)}</span>
+                          </div>
+                        ) : (
+                          <div className="stage-card-no-winner">TBC</div>
+                        )}
+                      </div>
+                    </Link>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -185,30 +300,26 @@ export default async function EditionPage({ params }: { params: { slug: string; 
           <EditionComments slug={params.slug} year={year} />
         </div>
 
-        {/* ── Sidebar ────────────────────────────────────────────────────── */}
+        {/* ── Sidebar ───────────────────────────────────────────────────────── */}
         <div className="rsp-sidebar">
 
-          {/* Top 10 results */}
+          {/* Top 10 */}
           {rawTop10.length > 0 && (
             <>
               <div className="rsp-st">Top 10</div>
               <div style={{ marginBottom: 24 }}>
                 {rawTop10.slice(0, 10).map((entry: any, i: number) => {
                   const name = extractTop10Name(entry)
-                  const gap = extractTop10Gap(entry)
+                  const gap  = extractTop10Gap(entry)
                   if (!name) return null
                   return (
                     <div key={i} className="top10-row">
                       <span className="t10-pos">{i + 1}</span>
-                      <Link
-                        href={`/riders/${encodeURIComponent(name)}`}
-                        style={{ fontSize: 13, flex: 1, textDecoration: 'none', color: 'inherit' }}
-                      >
+                      <Link href={`/riders/${encodeURIComponent(name)}`}
+                        style={{ fontSize: 13, flex: 1, textDecoration: 'none', color: 'inherit' }}>
                         {formatRiderName(name)}
                       </Link>
-                      {gap && (
-                        <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 'auto' }}>{gap}</span>
-                      )}
+                      {gap && <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 'auto' }}>{gap}</span>}
                     </div>
                   )
                 })}
@@ -216,19 +327,17 @@ export default async function EditionPage({ params }: { params: { slug: string; 
             </>
           )}
 
-          {/* No results fallback */}
           {rawTop10.length === 0 && (
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 20, fontStyle: 'italic' }}>
               No results for {year}.{' '}
               <a href={`https://www.procyclingstats.com/race/${params.slug}/${year}`}
-                target="_blank" rel="noopener noreferrer"
-                style={{ color: 'var(--gold-dim)' }}>
+                target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold-dim)' }}>
                 View on PCS ↗
               </a>
             </div>
           )}
 
-          {/* Average rating */}
+          {/* Avg rating */}
           {avgRating && (
             <div style={{ marginBottom: 24 }}>
               <div className="rsp-st">Avg Rating</div>
@@ -241,7 +350,7 @@ export default async function EditionPage({ params }: { params: { slug: string; 
             </div>
           )}
 
-          {/* Edition year navigation */}
+          {/* Edition navigation */}
           {availYears.length > 1 && (
             <div style={{ marginBottom: 24 }}>
               <div className="rsp-st">Editions</div>
@@ -252,6 +361,7 @@ export default async function EditionPage({ params }: { params: { slug: string; 
                     background: y === year ? 'rgba(232,200,74,.1)' : 'transparent',
                     color: y === year ? 'var(--gold)' : 'var(--muted)',
                     borderLeft: y === year ? '2px solid var(--gold)' : '2px solid transparent',
+                    transition: 'all .15s',
                   }}>
                     {y}
                   </Link>
