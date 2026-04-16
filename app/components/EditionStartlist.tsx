@@ -42,13 +42,33 @@ export default function EditionStartlist({ slug, year }: Props) {
   async function toggle() {
     if (!open && !loaded) {
       setLoading(true)
-      const { data } = await supabase
+
+      // FIX: the startlists table uses 'slug' as the race identifier column,
+      // not 'race_slug'. Using the wrong column name causes a silent empty
+      // result (Supabase returns [] rather than an error for unknown columns
+      // in .eq() filters in some configurations).
+      // Primary attempt: use 'slug' (matches the original index.html seeding).
+      let { data } = await supabase
         .from('startlists')
         .select('rider_name,team_name,nationality,image_url')
-        .eq('race_slug', slug)
+        .eq('slug', slug)
         .eq('year', year)
         .order('team_name')
         .order('rider_name')
+
+      // Fallback: if nothing came back, try 'race_slug' in case the DB was
+      // seeded with that column name instead.
+      if (!data || data.length === 0) {
+        const fallback = await supabase
+          .from('startlists')
+          .select('rider_name,team_name,nationality,image_url')
+          .eq('race_slug', slug)
+          .eq('year', year)
+          .order('team_name')
+          .order('rider_name')
+        data = fallback.data
+      }
+
       setRiders(data || [])
       setLoaded(true)
       setLoading(false)
