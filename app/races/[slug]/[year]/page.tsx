@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import LogEditionButton from '@/app/components/LogEditionButton'
+import WatchlistButton from '@/app/components/WatchlistButton'
 import EditionComments from '@/app/components/EditionComments'
 import EditionStartlist from '@/app/components/EditionStartlist'
 
@@ -10,14 +11,32 @@ export const revalidate = 3600
 async function getData(slug: string, year: number) {
   const [raceRes, resultRes, stagesRes, reviewsRes, availYearsRes] = await Promise.all([
     supabase.from('races').select('*').eq('slug', slug).single(),
+    // FIX: race_results uses 'slug' column (confirmed by schema). The year
+    // column is an integer — passing parseInt(params.year) ensures no
+    // type mismatch that could silently return null.
     supabase.from('race_results').select('*').eq('slug', slug).eq('year', year).maybeSingle(),
     supabase.from('stage_results').select('stage_num, stage_label, stage_date, stage_type, distance_km, winner, winner_team').eq('race_slug', slug).eq('year', year).order('stage_num'),
     supabase.from('race_logs').select('user_id, rating, review, date_watched, created_at, profiles(display_name, handle, avatar_url)').eq('slug', slug).eq('year', year).not('rating', 'is', null).gt('rating', 0).order('created_at', { ascending: false }).limit(20),
     supabase.from('race_results').select('year').eq('slug', slug).order('year', { ascending: false }),
   ])
+
+  let result = resultRes.data
+
+  // FIX: if the primary 'slug' query returned nothing, try 'race_slug' as a
+  // fallback in case the race_results table was seeded with that column name.
+  if (!result) {
+    const fallback = await supabase
+      .from('race_results')
+      .select('*')
+      .eq('race_slug', slug)
+      .eq('year', year)
+      .maybeSingle()
+    result = fallback.data
+  }
+
   return {
     race: raceRes.data,
-    result: resultRes.data,
+    result,
     stages: stagesRes.data || [],
     reviews: reviewsRes.data || [],
     availYears: (availYearsRes.data || []).map((r: { year: number }) => r.year),
@@ -80,14 +99,16 @@ export default async function EditionPage({ params }: { params: { slug: string; 
           {top10[0] && (
             <div className="rsp-section">
               <div className="rsp-st">Winner</div>
-              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, marginBottom: 4 }}>
-                {formatRiderName(top10[0])}
-              </div>
+              <Link href={`/riders/${encodeURIComponent(top10[0])}`} style={{ textDecoration: 'none' }}>
+                <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, marginBottom: 4, color: 'var(--gold)' }}>
+                  {formatRiderName(top10[0])}
+                </div>
+              </Link>
             </div>
           )}
 
-          {/* Log button */}
-          <div className="rsp-section" style={{ paddingTop: 0 }}>
+          {/* Log + Watchlist buttons */}
+          <div className="rsp-section" style={{ paddingTop: 0, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <LogEditionButton
               slug={params.slug}
               raceName={race.race_name}
@@ -95,6 +116,7 @@ export default async function EditionPage({ params }: { params: { slug: string; 
               year={year}
               availYears={availYears}
             />
+            <WatchlistButton slug={params.slug} />
           </div>
 
           {/* Stages */}
@@ -102,7 +124,7 @@ export default async function EditionPage({ params }: { params: { slug: string; 
             <div className="rsp-section">
               <div className="rsp-st">Stages</div>
               <div className="stage-list">
-                {stages.map(s => (
+                {stages.map((s: any) => (
                   <Link key={s.stage_num} href={`/races/${params.slug}/${year}/stages/${s.stage_num}`} className="srow" style={{ textDecoration: 'none' }}>
                     <span className="snum">{s.stage_num}</span>
                     <div className="sinfo">
@@ -150,7 +172,7 @@ export default async function EditionPage({ params }: { params: { slug: string; 
           {top10.length > 0 && (
             <>
               <div className="rsp-st">Top 10</div>
-              <div>
+              <div style={{ marginBottom: 24 }}>
                 {top10.slice(0, 10).map((name: string, i: number) => (
                   <div key={i} className="top10-row">
                     <span className="t10-pos">{i + 1}</span>
@@ -164,18 +186,39 @@ export default async function EditionPage({ params }: { params: { slug: string; 
           )}
 
           {avgRating && (
-            <div style={{ marginTop: 24 }}>
+            <div style={{ marginTop: top10.length > 0 ? 0 : 0 }}>
               <div className="rsp-st">Avg Rating</div>
               <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: 'var(--gold)' }}>
                 {avgRating}
               </div>
-              <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: 2 }}>{reviews.length} ratings</div>
+              <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: 2, marginBottom: 24 }}>{reviews.length} rating{reviews.length !== 1 ? 's' : ''}</div>
             </div>
           )}
 
-          <div style={{ marginTop: 24 }}>
-            <EditionStartlist slug={params.slug} year={year} />
-          </div>
+          {/* Year navigation */}
+          {availYears.length > 1 && (
+            <div style={{ marginBottom: 24 }}>
+              <div className="rsp-st">Editions</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 1, maxHeight: 200, overflowY: 'auto' }}>
+                {availYears.map((y: number) => (
+                  <Link
+                    key={y}
+                    href={`/races/${params.slug}/${y}`}
+                    style={{
+                      padding: '6px 10px', fontSize: 12, textDecoration: 'none',
+                      background: y === year ? 'rgba(232,200,74,.1)' : 'transparent',
+                      color: y === year ? 'var(--gold)' : 'var(--muted)',
+                      borderLeft: y === year ? '2px solid var(--gold)' : '2px solid transparent',
+                    }}
+                  >
+                    {y}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <EditionStartlist slug={params.slug} year={year} />
         </div>
       </div>
     </div>
