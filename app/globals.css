@@ -622,3 +622,179 @@ nav {
   .hero h1{font-size:clamp(28px,8vw,48px);}
   .empty{padding:36px 20px;}
 }
+/* ── STAGE CARD GRID ──────────────────────────────────────────────────────────
+   Replaces the old .stage-list / .srow / .snum / .sinfo / .sname / .sdate
+   classes with a visual card grid layout.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+.stage-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1px;
+  background: var(--border);
+}
+
+.stage-card {
+  display: block;
+  background: var(--card-bg);
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-decoration: none;
+  color: inherit;
+}
+
+.stage-card:hover {
+  background: #111;
+}
+
+/* Top accent bar — colour set inline via stage_type */
+.stage-card-bar {
+  height: 3px;
+  width: 100%;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+
+.stage-card:hover .stage-card-bar {
+  opacity: 1;
+}
+
+.stage-card-inner {
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 110px;
+}
+
+/* Stage number / "Prologue" label */
+.stage-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stage-card-num {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 13px;
+  letter-spacing: 2px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Stage type badge e.g. "⛰ Mountain" */
+.stage-card-type-badge {
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  border: 1px solid;
+  padding: 2px 6px;
+  white-space: nowrap;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+
+.stage-card:hover .stage-card-type-badge {
+  opacity: 1;
+}
+
+/* Departure → Arrival route */
+.stage-card-route {
+  font-size: 10px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+  flex-wrap: nowrap;
+}
+
+.stage-card-arrow {
+  color: var(--border-light);
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+/* Distance */
+.stage-card-distance {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--muted);
+  margin-top: auto;
+}
+
+/* Winner — the headline */
+.stage-card-winner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.stage-card-winner-icon {
+  font-size: 10px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.stage-card-winner-name {
+  font-family: 'DM Serif Display', serif;
+  font-size: 13px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+  transition: color 0.15s;
+}
+
+.stage-card:hover .stage-card-winner-name {
+  color: var(--gold);
+}
+
+/* Placeholder when winner not yet known */
+.stage-card-no-winner {
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--border-light);
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .stage-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .stage-card-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .stage-card-inner {
+    min-height: 90px;
+    padding: 10px 12px 12px;
+  }
+  .stage-card-winner-name {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 380px) {
+  .stage-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
