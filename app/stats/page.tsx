@@ -33,16 +33,39 @@ export default function StatsPage() {
   }, [user])
 
   async function load(uid: string) {
-    const [logsRes, racesRes, riderWinsRes] = await Promise.all([
+    // Step 1: fetch logs and races in parallel
+    const [logsRes, racesRes] = await Promise.all([
       supabase.from('race_logs').select('id,slug,year,rating,watched_live,created_at').eq('user_id', uid),
       supabase.from('races').select('slug,race_name,gradient,flag,country,race_type'),
-      supabase.from('rider_wins').select('rider_name,race_slug,year'),
     ])
-    setLogs(logsRes.data || [])
+
+    const userLogs: RaceLog[] = logsRes.data || []
     const raceMap: Record<string, Race> = {}
     ;(racesRes.data || []).forEach((r: any) => { raceMap[r.slug] = r })
+
+    setLogs(userLogs)
     setRaces(raceMap)
-    setRiderWins(riderWinsRes.data || [])
+
+    // Step 2: fetch rider_wins only for slugs the user has actually logged.
+    // This is the key fix: the old code fetched ALL rider_wins (potentially
+    // thousands of rows) and then tried to intersect in memory using
+    // rider_wins.race_slug vs race_logs.slug. If those two columns store
+    // slugs in even slightly different formats, the intersection returns
+    // nothing. By scoping the query to only the user's logged slugs we also
+    // make the query much smaller and faster.
+    const loggedSlugs = [...new Set(userLogs.map(l => l.slug))]
+
+    if (loggedSlugs.length > 0) {
+      const { data: winsData } = await supabase
+        .from('rider_wins')
+        .select('rider_name,race_slug,year')
+        .in('race_slug', loggedSlugs)
+
+      setRiderWins(winsData || [])
+    } else {
+      setRiderWins([])
+    }
+
     setLoading(false)
   }
 
@@ -59,7 +82,9 @@ export default function StatsPage() {
   )
 
   const rated = logs.filter(l => l.rating && l.rating > 0)
-  const avg = rated.length ? (rated.reduce((s, l) => s + (l.rating || 0), 0) / rated.length).toFixed(2) : '—'
+  const avg = rated.length
+    ? (rated.reduce((s, l) => s + (l.rating || 0), 0) / rated.length).toFixed(2)
+    : '—'
   const liveCount = logs.filter(l => l.watched_live).length
   const distinctRaces = new Set(logs.map(l => l.slug)).size
 
@@ -83,11 +108,19 @@ export default function StatsPage() {
     .sort((a, b) => b[1].count - a[1].count)
     .slice(0, 10)
 
-  // Most watched riders (from rider_wins intersected with logged races)
-  const riderCounts: Record<string, number> = {}
+  // Most watched riders
+  // Build a lookup set of "slug::year" keys from the user's logs.
+  // Also build a normalised version (lowercase, trimmed) for each key so
+  // minor slug format differences between race_logs.slug and
+  // rider_wins.race_slug don't silently break the intersection.
   const loggedKeys = new Set(logs.map(l => `${l.slug}::${l.year}`))
+  const loggedKeysNorm = new Set(logs.map(l => `${l.slug.toLowerCase().trim()}::${l.year}`))
+
+  const riderCounts: Record<string, number> = {}
   riderWins.forEach((w: any) => {
-    if (loggedKeys.has(`${w.race_slug}::${w.year}`)) {
+    const key = `${w.race_slug}::${w.year}`
+    const keyNorm = `${(w.race_slug || '').toLowerCase().trim()}::${w.year}`
+    if (loggedKeys.has(key) || loggedKeysNorm.has(keyNorm)) {
       riderCounts[w.rider_name] = (riderCounts[w.rider_name] || 0) + 1
     }
   })
@@ -242,7 +275,7 @@ export default function StatsPage() {
             {topCountries.map(([country, data], i) => (
               <div key={country} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: i < 3 ? 'var(--gold)' : 'var(--muted)', width: 24, textAlign: 'center' }}>{i + 1}</div>
-                <div style={{ fontSize: 16 }}>{data.flag}</div>
+                <div style={{ fontSize: 16, width: 24 }}>{data.flag}</div>
                 <div style={{ flex: 1, fontSize: 13 }}>{country}</div>
                 <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: 'var(--gold)' }}>{data.count}</div>
               </div>
