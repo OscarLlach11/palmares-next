@@ -28,12 +28,21 @@ export default function LoginPage() {
     if (mode === 'login') {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) { setError(error.message); setLoading(false); return }
-      // Check if onboarding complete
+
       const { data: session } = await supabase.auth.getSession()
       const uid = session.session?.user?.id
       if (uid) {
-        const { data: prof } = await supabase.from('profiles').select('onboarding_complete').eq('user_id', uid).maybeSingle()
-        if (prof && prof.onboarding_complete === false) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('onboarding_complete')
+          .eq('user_id', uid)
+          .maybeSingle()
+
+        // FIX: only send to onboarding if onboarding_complete is explicitly FALSE.
+        // NULL means the column didn't exist when this account was created (old user)
+        // — they should go straight home, not be forced through onboarding.
+        // Only brand-new signups get onboarding_complete: false set explicitly.
+        if (prof?.onboarding_complete === false) {
           router.push('/onboarding')
         } else {
           router.push('/')
@@ -41,16 +50,30 @@ export default function LoginPage() {
       } else {
         router.push('/')
       }
+
     } else {
+      // Sign up — always goes to onboarding for new accounts
       const { data, error } = await supabase.auth.signUp({ email, password })
       if (error) { setError(error.message); setLoading(false); return }
+
+      if (data.user) {
+        // Create profile row with onboarding_complete: false so the onboarding
+        // guard above routes them correctly if they sign out and back in mid-flow
+        await supabase.from('profiles').upsert({
+          user_id: data.user.id,
+          onboarding_complete: false,
+        }, { onConflict: 'user_id' })
+      }
+
       if (data.session) {
-        // Email confirmation disabled — session available immediately
+        // Email confirmation disabled — session available immediately → go to onboarding
         router.push('/onboarding')
       } else {
+        // Email confirmation enabled — tell them to check their inbox
         setSuccess('Account created! Check your email to confirm, then sign in.')
       }
     }
+
     setLoading(false)
   }
 
