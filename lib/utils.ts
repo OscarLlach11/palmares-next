@@ -48,12 +48,8 @@ function _parseRiderName(dbName: string): { first: string; last: string; display
  */
 export function formatRiderName(name: string | null | undefined): string {
   if (!name) return ''
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  const hasAllCapsWord = parts.some(w => _isAllCaps(w))
-  // Already in DB format (has at least one ALL-CAPS word) — parse and flip
-  if (hasAllCapsWord) return _parseRiderName(name).display || _toTitleCase(name)
-  // Already in display format or unknown — return with simple title case
-  return parts.map(_toTitleCase).join(' ')
+  // Names are pre-formatted in the DB — just return as-is
+  return name
 }
 
 /**
