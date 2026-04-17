@@ -332,8 +332,8 @@ export default function RiderPage() {
           <button key={t} onClick={() => setTab(t)}
             style={{ background: 'none', border: 'none', borderBottom: `2px solid ${tab === t ? 'var(--gold)' : 'transparent'}`, color: tab === t ? 'var(--gold)' : 'var(--muted)', padding: '10px 20px 10px 0', fontFamily: "'Bebas Neue', sans-serif", fontSize: 13, letterSpacing: 2.5, cursor: 'pointer', transition: 'color .15s' }}>
             {t.toUpperCase()}
-            {t === 'trophies' && trophies.length > 0 && (
-              <span style={{ fontSize: 10, opacity: 0.7, marginLeft: 4 }}>({trophies.length})</span>
+            {t === 'trophies' && (totalGCWins + totalStageWins) > 0 && (
+              <span style={{ fontSize: 10, opacity: 0.7, marginLeft: 4 }}>({totalGCWins + totalStageWins})</span>
             )}
           </button>
         ))}
