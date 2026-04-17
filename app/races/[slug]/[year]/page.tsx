@@ -5,7 +5,7 @@ import LogEditionButton from '@/app/components/LogEditionButton'
 import EditionComments from '@/app/components/EditionComments'
 import EditionStartlist from '@/app/components/EditionStartlist'
 
-export const revalidate = 0
+export const revalidate = 3600
 
 async function getData(slug: string, year: number) {
   const [raceRes, resultRes, stagesRes, reviewsRes, availYearsRes] = await Promise.all([
