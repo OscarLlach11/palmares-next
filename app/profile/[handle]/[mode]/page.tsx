@@ -1,120 +1,416 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useUser } from '@/app/context/UserContext'
 
-interface FollowUser {
-  user_id: string
-  display_name: string | null
-  handle: string | null
-  avatar_url: string | null
+function fmtDate(d: string) {
+  if (!d) return ''
+  return new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-export default function FollowersPage() {
+function riderColor(name: string): string {
+  const PALETTE = ['#1a3a8c', '#00594a', '#c0392b', '#9a8430', '#4527a0', '#00838f', '#6d4c41', '#1a4db3']
+  let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) & 0xffff
+  return PALETTE[h % PALETTE.length]
+}
+
+function riderInitials(name: string) {
+  return name.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+}
+
+function formatRiderName(name: string) {
+  if (!name) return ''
+  return name.split(' ').map(w => w === w.toUpperCase() && w.length > 1 ? w.charAt(0) + w.slice(1).toLowerCase() : w).join(' ')
+}
+
+export default function UserProfilePage() {
   const params = useParams()
-  const router = useRouter()
-  const { user, followingIds, toggleFollow } = useUser()
   const handle = params.handle as string
-  const mode = params.mode as string // 'followers' | 'following'
+  const { user, profile: myProfile, followingIds, toggleFollow } = useUser()
 
   const [loading, setLoading] = useState(true)
-  const [profileUserId, setProfileUserId] = useState<string | null>(null)
-  const [list, setList] = useState<FollowUser[]>([])
-  const [displayName, setDisplayName] = useState('')
+  const [notFound, setNotFound] = useState(false)
+  const [profile, setProfile] = useState<any>(null)
+  const [logs, setLogs] = useState<any[]>([])
+  const [races, setRaces] = useState<Record<string, any>>({})
+  const [followers, setFollowers] = useState(0)
+  const [following, setFollowing] = useState(0)
+  const [riderImages, setRiderImages] = useState<Record<string, string>>({})
+  const [favRace, setFavRace] = useState<any>(null)
+  const [stageCount, setStageCount] = useState(0)
+  const [logModal, setLogModal] = useState<null | 'all' | 'live'>(null)
 
-  useEffect(() => { load() }, [handle, mode])
+  const isMe = user && (myProfile?.handle === handle || user.id === handle)
+  const isFollowing = profile ? followingIds.has(profile.user_id) : false
+
+  useEffect(() => { load() }, [handle])
 
   async function load() {
     setLoading(true)
 
-    // Get profile by handle
     const { data: prof } = await supabase
-      .from('profiles')
-      .select('user_id,display_name')
-      .eq('handle', handle)
-      .maybeSingle()
+      .from('profiles').select('*').eq('handle', handle).maybeSingle()
 
-    if (!prof) { setLoading(false); return }
-    setProfileUserId(prof.user_id)
-    setDisplayName(prof.display_name || handle)
+    if (!prof) { setNotFound(true); setLoading(false); return }
+    setProfile(prof)
 
-    let userIds: string[] = []
+    const [logsRes, racesRes, fersRes, fingRes, stageCountRes] = await Promise.all([
+      supabase.from('race_logs').select('id,slug,year,rating,review,watched_live,date_watched,created_at').eq('user_id', prof.user_id).order('created_at', { ascending: false }),
+      supabase.from('races').select('slug,race_name,gradient,flag,country,logo_url'),
+      supabase.from('follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', prof.user_id),
+      supabase.from('follows').select('following_id', { count: 'exact', head: true }).eq('follower_id', prof.user_id),
+      supabase.from('stage_logs').select('id', { count: 'exact', head: true }).eq('user_id', prof.user_id),
+    ])
 
-    if (mode === 'followers') {
-      const { data } = await supabase
-        .from('follows')
-        .select('follower_id')
-        .eq('following_id', prof.user_id)
-      userIds = (data || []).map((r: any) => r.follower_id)
-    } else {
-      const { data } = await supabase
-        .from('follows')
-        .select('following_id')
-        .eq('follower_id', prof.user_id)
-      userIds = (data || []).map((r: any) => r.following_id)
+    const allLogs = logsRes.data || []
+    setLogs(allLogs)
+    setFollowers(fersRes.count || 0)
+    setFollowing(fingRes.count || 0)
+    setStageCount(stageCountRes.count || 0)
+
+    const raceMap: Record<string, any> = {}
+    ;(racesRes.data || []).forEach((r: any) => { raceMap[r.slug] = r })
+    setRaces(raceMap)
+
+    if (prof.fav_race_slug) setFavRace(raceMap[prof.fav_race_slug] || null)
+
+    const riderNames = (prof.fav_riders || [])
+      .filter(Boolean)
+      .map((r: any) => typeof r === 'string' ? r : r?.name)
+      .filter(Boolean)
+    if (riderNames.length) {
+      const { data: slRows } = await supabase.from('startlists').select('rider_name,image_url').in('rider_name', riderNames).order('year', { ascending: false }).limit(200)
+      const map: Record<string, string> = {}
+      ;(slRows || []).forEach((r: any) => { if (r.image_url && r.image_url !== 'none') map[r.rider_name] = r.image_url })
+      setRiderImages(map)
     }
 
-    if (!userIds.length) { setList([]); setLoading(false); return }
-
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('user_id,display_name,handle,avatar_url')
-      .in('user_id', userIds)
-
-    setList(profiles || [])
     setLoading(false)
   }
 
-  const title = mode === 'followers' ? 'Followers' : 'Following'
+  if (loading) return <div style={{ padding: 40, color: 'var(--muted)' }}>Loading…</div>
+  if (notFound) return (
+    <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>
+      User not found.
+      <div style={{ marginTop: 12 }}><Link href="/members" className="bs" style={{ textDecoration: 'none', fontSize: 10 }}>← Back to Members</Link></div>
+    </div>
+  )
+
+  const rated = logs.filter((l: any) => l.rating && l.rating > 0)
+  const avg = rated.length ? (rated.reduce((s: number, l: any) => s + (l.rating || 0), 0) / rated.length).toFixed(1) : '—'
+  const liveCount = logs.filter((l: any) => l.watched_live).length
+  const initials = (profile?.display_name || '?').split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
+
+  const buckets: Record<string, number> = {}
+  for (let v = 0.5; v <= 5.0; v += 0.5) buckets[v.toFixed(1)] = 0
+  rated.forEach((l: any) => {
+    const k = (Math.round((l.rating || 0) * 2) / 2).toFixed(1)
+    if (buckets[k] !== undefined) buckets[k]++
+  })
+  const maxBucket = Math.max(...Object.values(buckets), 1)
+
+  const byYear: Record<number, { count: number; ratings: number[] }> = {}
+  logs.forEach((l: any) => {
+    if (!byYear[l.year]) byYear[l.year] = { count: 0, ratings: [] }
+    byYear[l.year].count++
+    if (l.rating) byYear[l.year].ratings.push(l.rating)
+  })
+  const years = Object.keys(byYear).map(Number).sort((a, b) => b - a)
+
+  const countryCounts: Record<string, number> = {}
+  logs.forEach((l: any) => {
+    const r = races[l.slug]
+    if (r?.country) {
+      const key = `${r.flag || ''} ${r.country}`.trim()
+      countryCounts[key] = (countryCounts[key] || 0) + 1
+    }
+  })
+  const sortedCountries = Object.entries(countryCounts).sort((a, b) => b[1] - a[1])
+
+  const withReviews = logs.filter((l: any) => l.review?.trim()).slice(0, 5)
+
+  // Fav race card helpers
+  const favStageNum = profile?.fav_race_stage_num ?? null
+  const favYear = profile?.fav_race_year ?? null
+  const favRaceHref = favRace
+    ? (favStageNum !== null && favYear
+        ? `/races/${favRace.slug}/${favYear}/stages/${favStageNum}`
+        : favYear
+        ? `/races/${favRace.slug}/${favYear}`
+        : `/races/${favRace.slug}`)
+    : '#'
+  const favStageLabel = favStageNum === 0 ? 'Prologue' : favStageNum !== null ? `Stage ${favStageNum}` : null
 
   return (
-    <div style={{ maxWidth: 560, margin: '0 auto', padding: '32px 24px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28 }}>
-        <button onClick={() => router.back()}
-          style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 18, padding: 0 }}>←</button>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 3, color: 'var(--gold)' }}>
-          {title}
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--muted)' }}>· {displayName}</div>
-      </div>
+    <>
+      <div className="profile-layout">
+        {/* Column 1: stats sidebar */}
+        <div className="profile-sidebar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+            <div className="profile-avatar" style={{ cursor: 'default' }}>
+              {profile?.avatar_url
+                ? <img src={profile.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                : initials}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div className="profile-name">{(profile?.display_name || 'Cyclist').toUpperCase()}</div>
+              <div className="profile-handle">@{profile?.handle || 'cyclist'}</div>
+            </div>
+          </div>
 
-      {loading && <div style={{ color: 'var(--muted)', fontSize: 12 }}>Loading…</div>}
-
-      {!loading && list.length === 0 && (
-        <div style={{ color: 'var(--muted)', fontSize: 13 }}>
-          {mode === 'followers' ? 'No followers yet.' : 'Not following anyone yet.'}
-        </div>
-      )}
-
-      {list.map(u => {
-        const ini = (u.display_name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
-        const isFollowing = followingIds.has(u.user_id)
-        const isMe = user?.id === u.user_id
-        return (
-          <div key={u.user_id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
-            <Link href={`/profile/${u.handle}`} style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, textDecoration: 'none' }}>
-              <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--card-bg)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, overflow: 'hidden', flexShrink: 0 }}>
-                {u.avatar_url
-                  ? <img src={u.avatar_url} alt={u.display_name || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : ini}
-              </div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--fg)' }}>{u.display_name || 'Cyclist'}</div>
-                <div style={{ fontSize: 11, color: 'var(--muted)' }}>@{u.handle || 'cyclist'}</div>
-              </div>
-            </Link>
+          {/* Back + Follow/Edit */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+            <Link href="/members" className="bs" style={{ textDecoration: 'none', fontSize: 10, padding: '6px 12px', flexShrink: 0 }}>← Back</Link>
             {!isMe && user && (
               <button
-                onClick={() => toggleFollow(u.user_id)}
-                className={`follow-btn ${isFollowing ? 'following' : 'follow'}`}>
+                onClick={() => toggleFollow(profile.user_id)}
+                className={`follow-btn ${isFollowing ? 'following' : 'follow'}`}
+                style={{ flex: 1 }}
+              >
                 {isFollowing ? 'Following' : 'Follow'}
               </button>
             )}
+            {isMe && (
+              <Link href="/profile" className="bs" style={{ textDecoration: 'none', fontSize: 10, flex: 1, textAlign: 'center' }}>Edit Profile →</Link>
+            )}
+          </div>
+
+          {/* Stats grid */}
+          <div className="profile-stat-grid">
+            <button className="profile-stat-cell clickable" onClick={() => setLogModal('all')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'center', padding: 0 }}>
+              <div className="profile-stat-n">{logs.length}</div>
+              <div className="profile-stat-l">Races</div>
+            </button>
+            <button className="profile-stat-cell clickable" onClick={() => setLogModal('live')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'center', padding: 0 }}>
+              <div className="profile-stat-n">{liveCount}</div>
+              <div className="profile-stat-l">Live</div>
+            </button>
+            {[
+              [avg, 'Avg ★'],
+              [stageCount, 'Stages'],
+            ].map(([n, l]) => (
+              <div key={String(l)} className="profile-stat-cell">
+                <div className="profile-stat-n">{n}</div>
+                <div className="profile-stat-l">{l}</div>
+              </div>
+            ))}
+            {[
+              [followers, 'Followers', `/profile/${profile?.handle}/followers`],
+              [following, 'Following', `/profile/${profile?.handle}/following`],
+            ].map(([n, l, href]) => (
+              <Link key={String(l)} href={href as string} className="profile-stat-cell clickable" style={{ textDecoration: 'none' }}>
+                <div className="profile-stat-n">{n}</div>
+                <div className="profile-stat-l">{l}</div>
+              </Link>
+            ))}
+          </div>
+
+          {/* Rating distribution */}
+          <div style={{ marginTop: 24 }}>
+            <div className="profile-section-title" style={{ fontSize: 13, marginBottom: 12 }}>Rating Distribution</div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 60 }}>
+              {Object.entries(buckets).map(([v, cnt]) => (
+                <div key={v} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                  <div style={{ width: '100%', background: 'var(--gold)', borderRadius: 2, height: maxBucket > 0 ? Math.max(cnt / maxBucket * 52, cnt > 0 ? 2 : 0) : 0 }} />
+                  <div style={{ fontSize: 7, color: 'var(--muted)' }}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* By year */}
+          <div style={{ marginTop: 24 }}>
+            <div className="profile-section-title" style={{ fontSize: 13, marginBottom: 12 }}>By Year</div>
+            {years.map(y => {
+              const yd = byYear[y]
+              const yAvg = yd.ratings.length ? (yd.ratings.reduce((a: number, b: number) => a + b, 0) / yd.ratings.length).toFixed(1) : '—'
+              return (
+                <div key={y} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+                  <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 2 }}>{y}</span>
+                  <span style={{ color: 'var(--muted)' }}>{yd.count} edition{yd.count !== 1 ? 's' : ''}</span>
+                  <span style={{ color: 'var(--gold)', fontFamily: "'Bebas Neue', sans-serif" }}>★ {yAvg}</span>
+                </div>
+              )
+            })}
+            {years.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 12 }}>No races logged yet.</div>}
+          </div>
+        </div>
+
+        {/* Column 2: fav riders + fav race */}
+        <div className="profile-main" style={{ borderRight: '1px solid var(--border)' }}>
+          <div className="profile-section-title">Favourite Riders</div>
+          <div className="fav-riders-grid">
+            {(profile?.fav_riders || [null, null, null, null]).slice(0, 4).map((rider: any, i: number) => {
+              const name = typeof rider === 'string' ? rider : rider?.name
+              const imgUrl = riderImages[name] || (typeof rider === 'object' ? rider?.imageUrl : null)
+              if (name) {
+                const col = riderColor(name)
+                const ini = riderInitials(name)
+                return (
+                  <Link key={i} href={`/riders/${encodeURIComponent(name)}`} className="fav-rider-slot filled" style={{ position: 'relative', textDecoration: 'none' }}>
+                    {imgUrl
+                      ? <img src={imgUrl} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
+                      : <div style={{ width: '100%', height: '100%', background: col, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: '#fff' }}>{ini}</div>}
+                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', padding: '4px 5px', fontSize: 8, letterSpacing: 0.5, textTransform: 'uppercase', lineHeight: 1.2, color: '#fff' }}>
+                      {formatRiderName(name)}
+                    </div>
+                  </Link>
+                )
+              }
+              return <div key={i} className="fav-rider-slot" style={{ background: 'var(--card-bg)', border: '1px dashed var(--border)' }} />
+            })}
+          </div>
+
+          <div className="profile-section-title" style={{ marginTop: 28 }}>Favourite Race</div>
+          {favRace ? (
+            <Link href={favRaceHref} className="fav-race-card" style={{ textDecoration: 'none' }}>
+              <div className="fav-race-swatch" style={{ background: favRace.gradient }}>
+                {favRace.logo_url && <img src={favRace.logo_url} alt={favRace.race_name} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 6 }} />}
+              </div>
+              <div className="fav-race-info">
+                <div className="fav-race-name">{favRace.race_name}</div>
+                {favYear && (
+                  <div className="fav-race-year">
+                    {favYear} edition{favStageLabel ? ` · ${favStageLabel}` : ''}
+                  </div>
+                )}
+                <div className="fav-race-label">★ All-time favourite</div>
+              </div>
+            </Link>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>No favourite race set.</div>
+          )}
+        </div>
+
+        {/* Column 3: countries, activity, reviews */}
+        <div className="profile-main">
+          <div className="profile-section-title">Countries Watched</div>
+          {sortedCountries.length > 0 ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {sortedCountries.map(([country, cnt]) => (
+                <div key={country} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--card-bg)', border: '1px solid var(--border)', padding: '5px 10px', fontSize: 11, letterSpacing: 1 }}>
+                  <span style={{ color: 'var(--fg)' }}>{country}</span>
+                  <span style={{ color: 'var(--muted)', fontSize: 10 }}>{cnt}</span>
+                </div>
+              ))}
+            </div>
+          ) : <div style={{ color: 'var(--muted)', fontSize: 12 }}>No countries yet.</div>}
+
+          <div className="profile-section-title" style={{ marginTop: 28 }}>Recent Activity</div>
+          {logs.slice(0, 8).length > 0 ? logs.slice(0, 8).map((l: any) => {
+            const r = races[l.slug]
+            return (
+              <Link key={l.id} href={`/races/${l.slug}/${l.year}`} style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--border)', textDecoration: 'none' }}>
+                <div style={{ width: 40, height: 40, flexShrink: 0, background: r?.gradient || 'var(--border)', borderRadius: 2 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg)' }}>
+                    {r?.race_name || l.slug}
+                    <span style={{ fontWeight: 400, color: 'var(--muted)', marginLeft: 4 }}>{l.year}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                    {[
+                      l.date_watched ? fmtDate(l.date_watched) : '',
+                      l.watched_live ? '🔴 Live' : '',
+                      l.rating ? `★ ${l.rating}` : '',
+                    ].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+              </Link>
+            )
+          }) : <div style={{ color: 'var(--muted)', fontSize: 12 }}>No logged races yet.</div>}
+
+          <div className="profile-section-title" style={{ marginTop: 28 }}>Recent Reviews</div>
+          {withReviews.length > 0 ? withReviews.map((l: any) => {
+            const r = races[l.slug]
+            return (
+              <Link key={l.id} href={`/review/${handle}/${l.slug}/${l.year}`} style={{ display: 'block', padding: '12px 0', borderBottom: '1px solid var(--border)', textDecoration: 'none' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gold)', marginBottom: 4 }}>
+                  {r?.race_name || l.slug} {l.year}{l.rating ? ` · ★ ${l.rating}` : ''}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6, fontStyle: 'italic' }}>
+                  "{(l.review || '').slice(0, 220)}{(l.review || '').length > 220 ? '…' : ''}"
+                </div>
+              </Link>
+            )
+          }) : <div style={{ color: 'var(--muted)', fontSize: 12 }}>No reviews yet.</div>}
+        </div>
+      </div>
+
+      {/* Log modal */}
+      {logModal && (() => {
+        const modalLogs = logModal === 'live' ? logs.filter((l: any) => l.watched_live) : logs
+        const title = logModal === 'live'
+          ? `${profile?.display_name || handle}'s Live Races`
+          : `${profile?.display_name || handle}'s Race Log`
+        return (
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+            onClick={() => setLogModal(null)}
+          >
+            <div
+              style={{ background: 'var(--bg)', border: '1px solid var(--border)', width: '100%', maxWidth: 520, maxHeight: '80vh', display: 'flex', flexDirection: 'column', borderRadius: 2 }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 2 }}>{title}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>{modalLogs.length} race{modalLogs.length !== 1 ? 's' : ''}</span>
+                  <button onClick={() => setLogModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0 }}>✕</button>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, padding: '10px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+                <button onClick={() => setLogModal('all')}
+                  style={{ fontSize: 10, padding: '4px 12px', cursor: 'pointer', background: logModal === 'all' ? 'var(--gold)' : 'var(--card-bg)', color: logModal === 'all' ? '#000' : 'var(--muted)', border: '1px solid var(--border)', letterSpacing: 1 }}>
+                  ALL
+                </button>
+                <button onClick={() => setLogModal('live')}
+                  style={{ fontSize: 10, padding: '4px 12px', cursor: 'pointer', background: logModal === 'live' ? 'var(--gold)' : 'var(--card-bg)', color: logModal === 'live' ? '#000' : 'var(--muted)', border: '1px solid var(--border)', letterSpacing: 1 }}>
+                  🔴 LIVE ONLY
+                </button>
+              </div>
+              <div style={{ overflowY: 'auto', flex: 1 }}>
+                {modalLogs.length === 0 ? (
+                  <div style={{ padding: 24, color: 'var(--muted)', fontSize: 12, textAlign: 'center' }}>No races here yet.</div>
+                ) : modalLogs.map((l: any) => {
+                  const r = races[l.slug]
+                  return (
+                    <Link
+                      key={l.id}
+                      href={`/races/${l.slug}/${l.year}`}
+                      onClick={() => setLogModal(null)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 18px', borderBottom: '1px solid var(--border)', textDecoration: 'none', transition: 'background .1s' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#0d0d0d')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <div style={{ width: 32, height: 32, flexShrink: 0, background: r?.gradient || 'var(--border)', borderRadius: 2 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: 'var(--fg)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {r?.race_name || l.slug}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>
+                          {[
+                            l.year,
+                            l.watched_live ? '🔴 Live' : '',
+                            l.date_watched ? fmtDate(l.date_watched) : '',
+                          ].filter(Boolean).join(' · ')}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                        {l.rating && <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: 'var(--gold)' }}>★ {l.rating}</span>}
+                        {l.review && <span style={{ fontSize: 12, color: 'var(--muted)' }}>✍</span>}
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
           </div>
         )
-      })}
-    </div>
+      })()}
+    </>
   )
 }
