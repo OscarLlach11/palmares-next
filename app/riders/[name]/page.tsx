@@ -162,7 +162,7 @@ export default function RiderPage() {
     const [winsRes, stageWinsRes, appearancesRes] = await Promise.all([
       supabase.from('rider_wins').select('race_slug,year').eq('rider_name', dbName).order('year', { ascending: false }),
       supabase.from('stage_results').select('race_slug,year,stage_num,stage_label').eq('winner', dbName).order('year', { ascending: false }),
-      supabase.from('startlists').select('race_slug,year').eq('rider_name', dbName).order('year', { ascending: false }),
+      supabase.from('startlists').select('slug,year').eq('rider_name', dbName).order('year', { ascending: false }),
     ])
 
     const wins = winsRes.data || []
@@ -173,7 +173,7 @@ export default function RiderPage() {
     const allSlugs = [...new Set([
       ...wins.map((w: any) => w.race_slug),
       ...stageWins.map((s: any) => s.race_slug),
-      ...appearances.map((a: any) => a.race_slug),
+      ...appearances.map((a: any) => a.slug),
     ])]
 
     let raceMap: Record<string, any> = {}
@@ -236,12 +236,12 @@ export default function RiderPage() {
 
     // ── Build race appearances list ──────────────────────────────────────
     const raceList: RaceEntry[] = appearances.map((a: any) => ({
-      slug: a.race_slug,
+      slug: a.slug,
       year: a.year,
-      race_name: raceMap[a.race_slug]?.race_name || a.race_slug,
-      gradient: raceMap[a.race_slug]?.gradient || '#1a1a1a',
-      flag: raceMap[a.race_slug]?.flag || '',
-      race_type: raceMap[a.race_slug]?.race_type || '',
+      race_name: raceMap[a.slug]?.race_name || a.slug,
+      gradient: raceMap[a.slug]?.gradient || '#1a1a1a',
+      flag: raceMap[a.slug]?.flag || '',
+      race_type: raceMap[a.slug]?.race_type || '',
     }))
     setRaces(raceList)
     setLoading(false)
