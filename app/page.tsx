@@ -90,46 +90,47 @@ async function getFeaturedRiders(): Promise<FeaturedRider[]> {
   const extractName = (e: any) => typeof e === 'object' ? (e?.name || '') : (e || '')
   const names: string[] = entries.map(extractName).filter(Boolean)
 
-  const results = await Promise.all(
-    names.map(async (name): Promise<FeaturedRider> => {
-      // Use %name% wildcards so we match regardless of whether app_config
-      // has old-format names (e.g. "POGAČAR Tadej") or new-format names
-      // (e.g. "Tadej Pogačar"). The DB is now canonical "Firstname Lastname"
-      // but app_config may lag behind until manually updated.
-      const [withImageRes, latestRes] = await Promise.all([
-        supabase
-          .from('startlists')
-          .select('rider_name,team_name,nationality,image_url,year')
-          .ilike('rider_name', `%${name}%`)
-          .not('image_url', 'is', null)
-          .neq('image_url', 'none')
-          .order('year', { ascending: false })
-          .limit(1),
-        supabase
-          .from('startlists')
-          .select('rider_name,team_name,nationality,year')
-          .ilike('rider_name', `%${name}%`)
-          .order('year', { ascending: false })
-          .limit(1),
-      ])
+  // Single batch query: fetch ALL rows for ALL featured riders at once.
+  // app_config now has canonical "Firstname Lastname" names matching startlists exactly.
+  // This replaces 20 individual queries with 1 fast .in() query.
+  const { data: allRows } = await supabase
+    .from('startlists')
+    .select('rider_name,team_name,nationality,image_url,year')
+    .in('rider_name', names)
+    .order('year', { ascending: false })
 
-      const imageRow = withImageRes.data?.[0] || null
-      const latestRow = latestRes.data?.[0] || null
+  if (!allRows?.length) return names.map(n => ({ rider_name: n, team_name: null, nationality: null, image_url: null }))
 
-      if (!latestRow && !imageRow) {
-        return { rider_name: name, team_name: null, nationality: null, image_url: null }
-      }
+  // Group by rider, pick best image + latest team
+  const bestByRider = new Map<string, any>()
+  const latestByRider = new Map<string, any>()
 
-      return {
-        rider_name: latestRow?.rider_name || imageRow?.rider_name || name,
-        team_name: latestRow?.team_name || null,
-        nationality: latestRow?.nationality || imageRow?.nationality || null,
-        image_url: imageRow?.image_url || null,
-      }
-    })
-  )
+  allRows.forEach((r: any) => {
+    const key = r.rider_name
+    if (!latestByRider.has(key) || r.year > latestByRider.get(key).year) {
+      latestByRider.set(key, r)
+    }
+    const prev = bestByRider.get(key)
+    const hasImg = r.image_url && r.image_url !== 'none'
+    const prevHasImg = prev?.image_url && prev.image_url !== 'none'
+    if (!prev || (hasImg && !prevHasImg) || (hasImg && prevHasImg && r.year > prev.year)) {
+      bestByRider.set(key, r)
+    }
+  })
 
-  return results
+  return names.map(name => {
+    const best = bestByRider.get(name)
+    const latest = latestByRider.get(name)
+    if (!best && !latest) {
+      return { rider_name: name, team_name: null, nationality: null, image_url: null }
+    }
+    return {
+      rider_name: name,
+      team_name: latest?.team_name || null,
+      nationality: latest?.nationality || best?.nationality || null,
+      image_url: best?.image_url && best.image_url !== 'none' ? best.image_url : null,
+    }
+  })
 }
 
 export default async function DiscoverPage() {
