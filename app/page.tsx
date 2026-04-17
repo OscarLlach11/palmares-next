@@ -124,7 +124,7 @@ async function getFeaturedRiders(): Promise<FeaturedRider[]> {
         supabase
           .from('startlists')
           .select('rider_name,team_name,nationality,image_url,year')
-          .ilike('rider_name', `%${name.trim()}%`)
+          .ilike('rider_name', `%${name}%`)
           .order('year', { ascending: false })
           .limit(20)
       )
