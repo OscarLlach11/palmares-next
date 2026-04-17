@@ -4,14 +4,9 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
-// Names are now stored as "Firstname Lastname" — no transformation needed.
+// Names are now stored as "Firstname Lastname" — passthrough only.
 function formatRiderName(name: string): string {
   return name || ''
-}
-
-function fmtDate(d: string) {
-  if (!d) return ''
-  return new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 interface RiderInfo {
@@ -24,23 +19,45 @@ interface RiderInfo {
 interface RaceEntry {
   slug: string
   year: number
-  position: number | null
   race_name: string
   gradient: string
   flag: string
   race_type: string
 }
 
-interface Trophy {
+// GC win: one entry per race, with multiple years
+interface GCTrophy {
   slug: string
-  year: number
   race_name: string
   gradient: string
   flag: string
-  race_type: string
-  isGC: boolean
-  isStage: boolean
-  stageNum?: number
+  category: string
+  years: number[]
+  isStage: false
+}
+
+// Stage win: one entry per race, with multiple {year, stageNum, stageLabel}
+interface StageTrophy {
+  slug: string
+  race_name: string
+  gradient: string
+  flag: string
+  category: string
+  wins: { year: number; stageNum: number; stageLabel: string }[]
+  isStage: true
+}
+
+type Trophy = GCTrophy | StageTrophy
+
+const CAT_ORDER = ['Grand Tour', 'Stage Race', 'Monument', 'Classic', 'One Day', 'Pro', 'championship']
+const CAT_LABELS: Record<string, string> = {
+  'Grand Tour': 'Grand Tours',
+  'Stage Race': 'Stage Races',
+  'Monument': 'Monuments',
+  'Classic': 'Classics',
+  'One Day': 'One-Day Races',
+  'Pro': 'Pro Series',
+  'championship': 'Championships',
 }
 
 export default function RiderPage() {
@@ -53,15 +70,22 @@ export default function RiderPage() {
   const [trophies, setTrophies] = useState<Trophy[]>([])
   const [tab, setTab] = useState<'races' | 'trophies'>('races')
   const [notFound, setNotFound] = useState(false)
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
-  useEffect(() => {
-    load()
-  }, [riderName])
+  useEffect(() => { load() }, [riderName])
+
+  function toggleRow(key: string) {
+    setExpandedRows(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
 
   async function load() {
     setLoading(true)
 
-    // Get rider info from startlists — exact match first, then partial fallback
+    // Try exact ilike match first
     const { data: slRows } = await supabase
       .from('startlists')
       .select('rider_name,team_name,nationality,image_url,year')
@@ -69,8 +93,21 @@ export default function RiderPage() {
       .order('year', { ascending: false })
       .limit(50)
 
-    if (!slRows?.length) {
-      // Try partial match using the longest word in the name
+    let dbName: string
+    let resolvedInfo: RiderInfo | null = null
+
+    if (slRows?.length) {
+      const best = slRows.find(r => r.image_url && r.image_url !== 'none') || slRows[0]
+      const latest = slRows[0]
+      resolvedInfo = {
+        rider_name: best.rider_name,
+        team_name: latest.team_name,
+        nationality: latest.nationality,
+        image_url: best.image_url && best.image_url !== 'none' ? best.image_url : null,
+      }
+      dbName = latest.rider_name
+    } else {
+      // Partial fallback — try each word
       const parts = riderName.trim().split(' ')
       const longest = parts.reduce((a, b) => a.length >= b.length ? a : b)
       const { data: fallback } = await supabase
@@ -81,100 +118,101 @@ export default function RiderPage() {
         .limit(10)
       if (!fallback?.length) { setNotFound(true); setLoading(false); return }
       const best = fallback[0]
-      setInfo({
+      resolvedInfo = {
         rider_name: best.rider_name,
         team_name: best.team_name,
         nationality: best.nationality,
         image_url: best.image_url && best.image_url !== 'none' ? best.image_url : null,
-      })
-    } else {
-      const best = slRows.find(r => r.image_url && r.image_url !== 'none') || slRows[0]
-      const latest = slRows[0]
-      setInfo({
-        rider_name: best.rider_name,
-        team_name: latest.team_name,
-        nationality: latest.nationality,
-        image_url: best.image_url && best.image_url !== 'none' ? best.image_url : null,
-      })
+      }
+      dbName = best.rider_name  // ← critical fix: was missing in old fallback path
     }
 
-    // Use the canonical name from the DB for all subsequent queries
-    const dbName = slRows?.[0]?.rider_name || riderName
+    setInfo(resolvedInfo)
 
-    // Get GC wins from rider_wins
-    const { data: wins } = await supabase
-      .from('rider_wins')
-      .select('race_slug,year')
-      .eq('rider_name', dbName)
-      .order('year', { ascending: false })
+    // All subsequent queries use the canonical dbName from startlists
+    const [winsRes, stageWinsRes, appearancesRes] = await Promise.all([
+      supabase.from('rider_wins').select('race_slug,year').eq('rider_name', dbName).order('year', { ascending: false }),
+      supabase.from('stage_results').select('race_slug,year,stage_num,stage_label').eq('winner', dbName).order('year', { ascending: false }),
+      supabase.from('startlists').select('race_slug,year').eq('rider_name', dbName).order('year', { ascending: false }),
+    ])
 
-    // Get stage wins from stage_results
-    const { data: stageWins } = await supabase
-      .from('stage_results')
-      .select('race_slug,year,stage_num,stage_label')
-      .eq('winner', dbName)
-      .order('year', { ascending: false })
+    const wins = winsRes.data || []
+    const stageWins = stageWinsRes.data || []
+    const appearances = appearancesRes.data || []
 
-    // Fetch race metadata for all involved slugs
-    const slugs = [...new Set([
-      ...(wins || []).map((w: any) => w.race_slug),
-      ...(stageWins || []).map((s: any) => s.race_slug),
+    // Fetch all race metadata in one query
+    const allSlugs = [...new Set([
+      ...wins.map((w: any) => w.race_slug),
+      ...stageWins.map((s: any) => s.race_slug),
+      ...appearances.map((a: any) => a.race_slug),
     ])]
 
     let raceMap: Record<string, any> = {}
-    if (slugs.length) {
+    if (allSlugs.length) {
       const { data: raceData } = await supabase
         .from('races')
-        .select('slug,race_name,gradient,flag,race_type')
-        .in('slug', slugs)
+        .select('slug,race_name,gradient,flag,race_type,tier')
+        .in('slug', allSlugs)
       ;(raceData || []).forEach((r: any) => { raceMap[r.slug] = r })
     }
 
-    // Build trophy list
-    const trophyList: Trophy[] = [
-      ...(wins || []).map((w: any) => ({
-        slug: w.race_slug, year: w.year,
-        race_name: raceMap[w.race_slug]?.race_name || w.race_slug,
-        gradient: raceMap[w.race_slug]?.gradient || '#1a1a1a',
-        flag: raceMap[w.race_slug]?.flag || '',
-        race_type: raceMap[w.race_slug]?.race_type || '',
-        isGC: true, isStage: false,
-      })),
-      ...(stageWins || []).map((s: any) => ({
-        slug: s.race_slug, year: s.year,
-        race_name: raceMap[s.race_slug]?.race_name || s.race_slug,
-        gradient: raceMap[s.race_slug]?.gradient || '#1a1a1a',
-        flag: raceMap[s.race_slug]?.flag || '',
-        race_type: raceMap[s.race_slug]?.race_type || '',
-        isGC: false, isStage: true,
+    // Build trophy list — GC wins grouped by race
+    const gcMap: Record<string, GCTrophy> = {}
+    wins.forEach((w: any) => {
+      const race = raceMap[w.race_slug]
+      if (!gcMap[w.race_slug]) {
+        gcMap[w.race_slug] = {
+          slug: w.race_slug,
+          race_name: race?.race_name || w.race_slug,
+          gradient: race?.gradient || '#1a1a1a',
+          flag: race?.flag || '',
+          category: race?.race_type || 'One Day',
+          years: [],
+          isStage: false,
+        }
+      }
+      const yr = parseInt(w.year)
+      if (!gcMap[w.race_slug].years.includes(yr)) gcMap[w.race_slug].years.push(yr)
+    })
+    Object.values(gcMap).forEach(t => t.years.sort((a, b) => b - a))
+
+    // Stage wins grouped by race
+    const stageMap: Record<string, StageTrophy> = {}
+    stageWins.forEach((s: any) => {
+      const race = raceMap[s.race_slug]
+      if (!stageMap[s.race_slug]) {
+        stageMap[s.race_slug] = {
+          slug: s.race_slug,
+          race_name: (race?.race_name || s.race_slug) + ' – Stages',
+          gradient: race?.gradient || '#1a1a1a',
+          flag: race?.flag || '',
+          category: race?.race_type || 'One Day',
+          wins: [],
+          isStage: true,
+        }
+      }
+      stageMap[s.race_slug].wins.push({
+        year: parseInt(s.year),
         stageNum: s.stage_num,
-      })),
-    ].sort((a, b) => b.year - a.year)
-    setTrophies(trophyList)
+        stageLabel: s.stage_label || String(s.stage_num),
+      })
+    })
+    Object.values(stageMap).forEach(t =>
+      t.wins.sort((a, b) => b.year - a.year || String(a.stageLabel).localeCompare(String(b.stageLabel), undefined, { numeric: true }))
+    )
 
-    // Get all race appearances from startlists
-    const { data: appearances } = await supabase
-      .from('startlists')
-      .select('race_slug,year')
-      .eq('rider_name', dbName)
-      .order('year', { ascending: false })
+    // Merge and group by category
+    const allTrophies: Trophy[] = [...Object.values(gcMap), ...Object.values(stageMap)]
+    setTrophies(allTrophies)
 
-    const appSlugs = [...new Set((appearances || []).map((a: any) => a.race_slug))]
-    let appRaceMap: Record<string, any> = { ...raceMap }
-    const missing = appSlugs.filter(s => !appRaceMap[s])
-    if (missing.length) {
-      const { data: moreRaces } = await supabase
-        .from('races').select('slug,race_name,gradient,flag,race_type').in('slug', missing)
-      ;(moreRaces || []).forEach((r: any) => { appRaceMap[r.slug] = r })
-    }
-
-    const raceList: RaceEntry[] = (appearances || []).map((a: any) => ({
-      slug: a.race_slug, year: a.year,
-      position: null,
-      race_name: appRaceMap[a.race_slug]?.race_name || a.race_slug,
-      gradient: appRaceMap[a.race_slug]?.gradient || '#1a1a1a',
-      flag: appRaceMap[a.race_slug]?.flag || '',
-      race_type: appRaceMap[a.race_slug]?.race_type || '',
+    // Build race appearances list
+    const raceList: RaceEntry[] = appearances.map((a: any) => ({
+      slug: a.race_slug,
+      year: a.year,
+      race_name: raceMap[a.race_slug]?.race_name || a.race_slug,
+      gradient: raceMap[a.race_slug]?.gradient || '#1a1a1a',
+      flag: raceMap[a.race_slug]?.flag || '',
+      race_type: raceMap[a.race_slug]?.race_type || '',
     }))
     setRaces(raceList)
     setLoading(false)
@@ -189,8 +227,26 @@ export default function RiderPage() {
   )
 
   const displayName = formatRiderName(info?.rider_name || riderName)
-  const gcWins = trophies.filter(t => t.isGC).length
-  const stageWinCount = trophies.filter(t => t.isStage).length
+  const gcTrophies = trophies.filter((t): t is GCTrophy => !t.isStage)
+  const stageTrophies = trophies.filter((t): t is StageTrophy => t.isStage)
+  const totalGCWins = gcTrophies.reduce((s, t) => s + t.years.length, 0)
+  const totalStageWins = stageTrophies.reduce((s, t) => s + t.wins.length, 0)
+
+  // Group trophies by category for the cabinet
+  const byCategory: Record<string, Trophy[]> = {}
+  trophies.forEach(t => {
+    const cat = t.category
+    if (!byCategory[cat]) byCategory[cat] = []
+    byCategory[cat].push(t)
+  })
+  Object.values(byCategory).forEach(arr => {
+    arr.sort((a, b) => {
+      if (a.isStage !== b.isStage) return a.isStage ? 1 : -1
+      const aCount = a.isStage ? (a as StageTrophy).wins.length : (a as GCTrophy).years.length
+      const bCount = b.isStage ? (b as StageTrophy).wins.length : (b as GCTrophy).years.length
+      return bCount - aCount || a.race_name.localeCompare(b.race_name)
+    })
+  })
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', padding: '0 24px 48px' }}>
@@ -202,18 +258,16 @@ export default function RiderPage() {
                 style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
                 onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
             : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: 'var(--muted)' }}>
-                {displayName.split(' ').map(w => w[0]).slice(0, 2).join('')}
+                {displayName.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('')}
               </div>}
         </div>
         <div>
           <div className="rider-page-name">{displayName}</div>
-          <div className="rider-page-meta">
-            {[info?.nationality, info?.team_name].filter(Boolean).join(' · ')}
-          </div>
+          <div className="rider-page-meta">{[info?.nationality, info?.team_name].filter(Boolean).join(' · ')}</div>
           <div className="rider-page-meta" style={{ marginTop: 6 }}>
             {races.length} race{races.length !== 1 ? 's' : ''} in database
-            {gcWins > 0 && ` · ${gcWins} overall win${gcWins !== 1 ? 's' : ''}`}
-            {stageWinCount > 0 && ` · ${stageWinCount} stage win${stageWinCount !== 1 ? 's' : ''}`}
+            {totalGCWins > 0 && ` · ${totalGCWins} win${totalGCWins !== 1 ? 's' : ''}`}
+            {totalStageWins > 0 && ` · ${totalStageWins} stage win${totalStageWins !== 1 ? 's' : ''}`}
           </div>
         </div>
       </div>
@@ -244,11 +298,11 @@ export default function RiderPage() {
                   <div className="rider-race-name">{r.race_name}</div>
                   <div className="rider-race-year">{r.flag} {r.year}</div>
                 </div>
-                {trophies.some(t => t.slug === r.slug && t.year === r.year && t.isGC) && (
-                  <span style={{ fontSize: 12, color: 'var(--gold)' }}>🏆 Winner</span>
+                {gcTrophies.some(t => t.slug === r.slug && t.years.includes(r.year)) && (
+                  <span style={{ fontSize: 12, color: 'var(--gold)' }}>🏆</span>
                 )}
-                {trophies.some(t => t.slug === r.slug && t.year === r.year && t.isStage) && (
-                  <span style={{ fontSize: 12, color: 'var(--gold)' }}>⚡ Stage</span>
+                {stageTrophies.some(t => t.slug === r.slug && t.wins.some(w => w.year === r.year)) && (
+                  <span style={{ fontSize: 12, color: 'var(--gold)', marginLeft: 4 }}>⚡</span>
                 )}
               </Link>
             ))
@@ -259,49 +313,97 @@ export default function RiderPage() {
       {/* Trophies tab */}
       {tab === 'trophies' && (
         <div>
-          {trophies.length === 0
-            ? <div style={{ color: 'var(--muted)', fontSize: 12 }}>No wins recorded yet.</div>
-            : (
-              <>
-                {gcWins > 0 && (
-                  <div style={{ marginBottom: 32 }}>
-                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 3, color: 'var(--gold)', marginBottom: 12 }}>
-                      🏆 Overall Wins ({gcWins})
-                    </div>
-                    {trophies.filter(t => t.isGC).map((t, i) => (
-                      <Link key={i} href={`/races/${t.slug}/${t.year}`}
-                        className="rider-race-row" style={{ textDecoration: 'none' }}>
-                        <div className="rider-race-swatch" style={{ background: t.gradient }} />
-                        <div style={{ flex: 1 }}>
-                          <div className="rider-race-name">{t.race_name}</div>
-                          <div className="rider-race-year">{t.flag} {t.year}</div>
-                        </div>
-                        <span style={{ fontSize: 11, color: 'var(--gold)' }}>🏆</span>
-                      </Link>
-                    ))}
+          {trophies.length === 0 ? (
+            <div style={{ padding: '48px 0', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+              No recorded wins in the database.
+            </div>
+          ) : (
+            <>
+              {/* Summary bar */}
+              <div style={{ display: 'flex', gap: 24, marginBottom: 32, paddingBottom: 24, borderBottom: '1px solid var(--border)' }}>
+                <div>
+                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, letterSpacing: 2, color: 'var(--gold)' }}>{totalGCWins}</div>
+                  <div style={{ fontSize: 9, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--muted)' }}>GC / Overall Wins</div>
+                </div>
+                {totalStageWins > 0 && (
+                  <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 24 }}>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, letterSpacing: 2, color: 'var(--ml)' }}>{totalStageWins}</div>
+                    <div style={{ fontSize: 9, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--muted)' }}>Stage Wins</div>
                   </div>
                 )}
-                {stageWinCount > 0 && (
+              </div>
+
+              {/* Sections by category */}
+              {CAT_ORDER.filter(cat => byCategory[cat]?.length).map(cat => (
+                <div key={cat} style={{ marginBottom: 36 }}>
+                  <div style={{ fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 16, paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>
+                    {CAT_LABELS[cat] || cat}
+                  </div>
                   <div>
-                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 3, color: 'var(--gold)', marginBottom: 12 }}>
-                      ⚡ Stage Wins ({stageWinCount})
-                    </div>
-                    {trophies.filter(t => t.isStage).map((t, i) => (
-                      <Link key={i} href={`/races/${t.slug}/${t.year}/stages/${t.stageNum}`}
-                        className="rider-race-row" style={{ textDecoration: 'none' }}>
-                        <div className="rider-race-swatch" style={{ background: t.gradient }} />
-                        <div style={{ flex: 1 }}>
-                          <div className="rider-race-name">{t.race_name} — Stage {t.stageNum}</div>
-                          <div className="rider-race-year">{t.flag} {t.year}</div>
+                    {byCategory[cat].map(t => {
+                      const count = t.isStage ? (t as StageTrophy).wins.length : (t as GCTrophy).years.length
+                      const isGT = t.category === 'Grand Tour'
+                      const isMonument = t.category === 'Monument'
+                      const accentColor = isGT ? 'var(--gold)' : isMonument ? '#c8a87a' : 'var(--ml)'
+                      const rowKey = t.slug + (t.isStage ? '-stage' : '-gc')
+                      const expanded = expandedRows.has(rowKey)
+
+                      return (
+                        <div key={rowKey} style={{ borderBottom: '1px solid var(--border)' }}>
+                          {/* Row header */}
+                          <div
+                            onClick={() => toggleRow(rowKey)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 0', cursor: 'pointer' }}
+                          >
+                            <div style={{ width: 4, height: 36, flexShrink: 0, background: t.gradient, opacity: t.isStage ? 0.6 : 1 }} />
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, letterSpacing: 2, color: 'var(--white)' }}>
+                                {t.race_name}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: accentColor }}>{count}</div>
+                              <div style={{ fontSize: 9, letterSpacing: 1.5, color: 'var(--muted)' }}>
+                                {t.isStage ? `STAGE${count !== 1 ? 'S' : ''}` : `WIN${count !== 1 ? 'S' : ''}`}
+                              </div>
+                              <div style={{ fontSize: 10, color: 'var(--muted)', transition: 'transform .2s', transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▸</div>
+                            </div>
+                          </div>
+
+                          {/* Expanded year/stage chips */}
+                          {expanded && (
+                            <div style={{ padding: '0 0 12px 18px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                              {t.isStage
+                                ? (t as StageTrophy).wins.map((w, i) => (
+                                  <Link key={i} href={`/races/${t.slug}/${w.year}/stages/${w.stageNum}`}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: 'var(--card-bg)', border: '1px solid var(--border)', textDecoration: 'none', transition: 'border-color .15s' }}
+                                    onMouseOver={e => (e.currentTarget.style.borderColor = 'var(--border-light)')}
+                                    onMouseOut={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
+                                    <span style={{ fontSize: 10 }}>🏆</span>
+                                    <span style={{ fontSize: 11, color: 'var(--ml)', fontFamily: "'Bebas Neue', sans-serif", letterSpacing: 1 }}>{w.year}</span>
+                                    <span style={{ fontSize: 9, color: 'var(--muted)' }}>S.{w.stageLabel}</span>
+                                  </Link>
+                                ))
+                                : (t as GCTrophy).years.map((y, i) => (
+                                  <Link key={i} href={`/races/${t.slug}/${y}`}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--card-bg)', border: '1px solid var(--border)', textDecoration: 'none', transition: 'border-color .15s' }}
+                                    onMouseOver={e => (e.currentTarget.style.borderColor = `${accentColor}40`)}
+                                    onMouseOut={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
+                                    <span style={{ fontSize: 10 }}>🏆</span>
+                                    <span style={{ fontSize: 12, color: accentColor, fontFamily: "'Bebas Neue', sans-serif", letterSpacing: 1 }}>{y}</span>
+                                  </Link>
+                                ))
+                              }
+                            </div>
+                          )}
                         </div>
-                        <span style={{ fontSize: 11, color: 'var(--gold)' }}>⚡</span>
-                      </Link>
-                    ))}
+                      )
+                    })}
                   </div>
-                )}
-              </>
-            )
-          }
+                </div>
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>
