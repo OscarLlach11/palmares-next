@@ -2,7 +2,7 @@ import { supabase } from '@/lib/supabase'
 import RaceGrid from './components/RaceGrid'
 import DiscoverHero from './components/DiscoverHero'
 
-export const revalidate = 0
+export const revalidate = 600
 
 const SG_LABELS: Record<string, string> = {
   cobbled: 'Cobbled', gravel: 'Gravel', mountain: 'Mountain', sprint: 'Sprinters',
