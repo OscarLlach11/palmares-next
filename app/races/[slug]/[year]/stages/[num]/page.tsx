@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 import StageComments from '@/app/components/StageComments'
 import LogStageButton from '@/app/components/LogStageButton'
 
-export const revalidate = 0
+export const revalidate = 3600
 
 async function getData(slug: string, year: number, stageNum: number) {
   const [raceRes, stageRes, allStagesRes] = await Promise.all([
