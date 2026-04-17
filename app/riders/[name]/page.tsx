@@ -25,7 +25,6 @@ interface RaceEntry {
   race_type: string
 }
 
-// GC win: one entry per race, with multiple years
 interface GCTrophy {
   slug: string
   race_name: string
@@ -36,7 +35,6 @@ interface GCTrophy {
   isStage: false
 }
 
-// Stage win: one entry per race, with multiple {year, stageNum, stageLabel}
 interface StageTrophy {
   slug: string
   race_name: string
@@ -85,51 +83,82 @@ export default function RiderPage() {
   async function load() {
     setLoading(true)
 
-    // Try exact ilike match first
-    const { data: slRows } = await supabase
+    // ── Find the rider in startlists ──────────────────────────────────────
+    // Strategy: try multiple approaches to handle any name format
+    //  1. Exact ilike match (fastest — works when URL has canonical name)
+    //  2. Wildcard match with each word ANDed (handles "Firstname Lastname" and "Lastname Firstname")
+    //  3. Fallback to longest word partial match
+    let slRows: any[] | null = null
+
+    // Attempt 1: exact match
+    const { data: exactRows } = await supabase
       .from('startlists')
       .select('rider_name,team_name,nationality,image_url,year')
       .ilike('rider_name', riderName)
       .order('year', { ascending: false })
       .limit(50)
 
-    let dbName: string
-    let resolvedInfo: RiderInfo | null = null
-
-    if (slRows?.length) {
-      const best = slRows.find(r => r.image_url && r.image_url !== 'none') || slRows[0]
-      const latest = slRows[0]
-      resolvedInfo = {
-        rider_name: best.rider_name,
-        team_name: latest.team_name,
-        nationality: latest.nationality,
-        image_url: best.image_url && best.image_url !== 'none' ? best.image_url : null,
-      }
-      dbName = latest.rider_name
+    if (exactRows?.length) {
+      slRows = exactRows
     } else {
-      // Partial fallback — try each word
-      const parts = riderName.trim().split(' ')
-      const longest = parts.reduce((a, b) => a.length >= b.length ? a : b)
-      const { data: fallback } = await supabase
-        .from('startlists')
-        .select('rider_name,team_name,nationality,image_url,year')
-        .ilike('rider_name', `%${longest}%`)
-        .order('year', { ascending: false })
-        .limit(10)
-      if (!fallback?.length) { setNotFound(true); setLoading(false); return }
-      const best = fallback[0]
-      resolvedInfo = {
-        rider_name: best.rider_name,
-        team_name: best.team_name,
-        nationality: best.nationality,
-        image_url: best.image_url && best.image_url !== 'none' ? best.image_url : null,
+      // Attempt 2: split into words and search with wildcards
+      // "Tadej Pogačar" and "Pogačar Tadej" both match because
+      // each word is checked independently with AND
+      const words = riderName.trim().split(/\s+/).filter(w => w.length >= 2)
+      if (words.length >= 1) {
+        let query = supabase
+          .from('startlists')
+          .select('rider_name,team_name,nationality,image_url,year')
+
+        for (const word of words) {
+          query = query.ilike('rider_name', `%${word}%`)
+        }
+
+        const { data: wordRows } = await query
+          .order('year', { ascending: false })
+          .limit(50)
+
+        if (wordRows?.length) {
+          slRows = wordRows
+        }
       }
-      dbName = best.rider_name  // ← critical fix: was missing in old fallback path
+
+      // Attempt 3: longest word fallback
+      if (!slRows?.length) {
+        const parts = riderName.trim().split(/\s+/)
+        const longest = parts.reduce((a, b) => a.length >= b.length ? a : b)
+        const { data: fallbackRows } = await supabase
+          .from('startlists')
+          .select('rider_name,team_name,nationality,image_url,year')
+          .ilike('rider_name', `%${longest}%`)
+          .order('year', { ascending: false })
+          .limit(10)
+
+        if (fallbackRows?.length) {
+          slRows = fallbackRows
+        }
+      }
     }
 
-    setInfo(resolvedInfo)
+    if (!slRows?.length) {
+      setNotFound(true)
+      setLoading(false)
+      return
+    }
 
-    // All subsequent queries use the canonical dbName from startlists
+    // Pick best image row and latest row for team name
+    const best = slRows.find(r => r.image_url && r.image_url !== 'none') || slRows[0]
+    const latest = slRows[0]
+    const dbName = latest.rider_name  // canonical name from DB
+
+    setInfo({
+      rider_name: best.rider_name,
+      team_name: latest.team_name,
+      nationality: latest.nationality,
+      image_url: best.image_url && best.image_url !== 'none' ? best.image_url : null,
+    })
+
+    // ── Fetch wins, stage wins, and appearances in parallel ───────────────
     const [winsRes, stageWinsRes, appearancesRes] = await Promise.all([
       supabase.from('rider_wins').select('race_slug,year').eq('rider_name', dbName).order('year', { ascending: false }),
       supabase.from('stage_results').select('race_slug,year,stage_num,stage_label').eq('winner', dbName).order('year', { ascending: false }),
@@ -140,7 +169,7 @@ export default function RiderPage() {
     const stageWins = stageWinsRes.data || []
     const appearances = appearancesRes.data || []
 
-    // Fetch all race metadata in one query
+    // ── Fetch all race metadata in one query ─────────────────────────────
     const allSlugs = [...new Set([
       ...wins.map((w: any) => w.race_slug),
       ...stageWins.map((s: any) => s.race_slug),
@@ -156,7 +185,8 @@ export default function RiderPage() {
       ;(raceData || []).forEach((r: any) => { raceMap[r.slug] = r })
     }
 
-    // Build trophy list — GC wins grouped by race
+    // ── Build trophy cabinet ─────────────────────────────────────────────
+    // GC wins grouped by race
     const gcMap: Record<string, GCTrophy> = {}
     wins.forEach((w: any) => {
       const race = raceMap[w.race_slug]
@@ -201,11 +231,10 @@ export default function RiderPage() {
       t.wins.sort((a, b) => b.year - a.year || String(a.stageLabel).localeCompare(String(b.stageLabel), undefined, { numeric: true }))
     )
 
-    // Merge and group by category
     const allTrophies: Trophy[] = [...Object.values(gcMap), ...Object.values(stageMap)]
     setTrophies(allTrophies)
 
-    // Build race appearances list
+    // ── Build race appearances list ──────────────────────────────────────
     const raceList: RaceEntry[] = appearances.map((a: any) => ({
       slug: a.race_slug,
       year: a.year,
@@ -350,7 +379,6 @@ export default function RiderPage() {
 
                       return (
                         <div key={rowKey} style={{ borderBottom: '1px solid var(--border)' }}>
-                          {/* Row header */}
                           <div
                             onClick={() => toggleRow(rowKey)}
                             style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 0', cursor: 'pointer' }}
@@ -370,7 +398,6 @@ export default function RiderPage() {
                             </div>
                           </div>
 
-                          {/* Expanded year/stage chips */}
                           {expanded && (
                             <div style={{ padding: '0 0 12px 18px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                               {t.isStage
