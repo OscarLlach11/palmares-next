@@ -798,3 +798,169 @@ nav {
     grid-template-columns: 1fr;
   }
 }
+/* ═══════════════════════════════════════════════════════════════════
+   MOBILE ENHANCEMENTS — append to bottom of globals.css
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Bottom nav height token (used by padding-bottom) ─────────── */
+:root {
+  --mob-nav-h: 57px;
+}
+
+/* ── Page bottom padding so content isn't hidden behind nav ────── */
+@media (max-width: 820px) {
+  main {
+    padding-bottom: calc(var(--mob-nav-h) + env(safe-area-inset-bottom, 0px) + 8px);
+  }
+}
+
+/* ── rsp-sidebar: hide on mobile as a column, show inline ──────── */
+@media (max-width: 820px) {
+
+  /* Override the blanket display:none from the existing rule */
+  .rsp-sidebar {
+    display: block !important;
+    position: static !important;
+    height: auto !important;
+    overflow-y: visible !important;
+    border-left: none !important;
+    border-top: 1px solid var(--border);
+    padding: 20px 16px !important;
+    /* Give it a slightly different background so it reads as a section */
+    background: var(--off-black);
+  }
+
+  /* Inside the sidebar, sections lose their sticky behaviour */
+  .rsp-sidebar .rsp-section {
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+  }
+
+  /* Top 10 / Final GC list — slightly more compact on mobile */
+  .rsp-sidebar .top10-row {
+    padding: 5px 0;
+  }
+
+  /* Edition year nav inside sidebar — lay it out horizontally */
+  .rsp-sidebar-year-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  /* Startlist grid — fewer columns on narrow screens */
+  .startlist-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+
+  /* Stage card grid — 2 columns minimum on mobile */
+  .stage-card-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Stage card inner — slightly tighter on mobile */
+  .stage-card-inner {
+    min-height: 90px;
+    padding: 10px 12px 12px;
+  }
+
+  .stage-card-winner-name {
+    font-size: 11px;
+  }
+}
+
+/* ── Profile layout: stack all 3 columns vertically ───────────── */
+@media (max-width: 820px) {
+  .profile-layout {
+    grid-template-columns: 1fr;
+  }
+
+  /* Remove right borders that divide columns, use bottom borders instead */
+  .profile-sidebar,
+  .profile-main {
+    border-right: none !important;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .profile-sidebar {
+    padding: 20px 16px 16px;
+  }
+
+  .profile-main {
+    padding: 20px 16px;
+  }
+
+  /* Fav riders — allow wrapping on narrow screens */
+  .fav-riders-grid {
+    flex-wrap: wrap;
+  }
+
+  .fav-rider-slot {
+    width: calc(25% - 8px);
+    min-width: 70px;
+  }
+}
+
+/* ── Modals — full-screen on mobile ────────────────────────────── */
+@media (max-width: 820px) {
+  /* Log race modal, edit profile modal, etc. */
+  /* These use inline styles with maxWidth:600 — override to full width */
+  .modal-inner-mobile {
+    max-width: 100% !important;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+}
+
+/* ── rsp-main padding on mobile ────────────────────────────────── */
+@media (max-width: 820px) {
+  .rsp-main {
+    padding: 0 !important;
+  }
+
+  .rsp-banner {
+    border-radius: 0;
+    height: 160px;
+    margin-bottom: 0;
+  }
+
+  .rsp-section {
+    padding: 16px 16px 16px;
+    margin-bottom: 0;
+  }
+
+  .rsp-section + .rsp-section {
+    border-top: 1px solid var(--border);
+  }
+
+  .rsp-section:last-child {
+    border-bottom: none;
+  }
+}
+
+/* ── Banner title size ─────────────────────────────────────────── */
+@media (max-width: 820px) {
+  .rsp-ttl {
+    font-size: 28px !important;
+  }
+}
+
+/* ── Leaderboard — tighter padding ────────────────────────────── */
+@media (max-width: 820px) {
+  .lbi {
+    padding: 10px 16px;
+    gap: 12px;
+  }
+  .lbrank {
+    font-size: 20px;
+    width: 26px;
+  }
+}
+
+/* ── More drawer MoreLink hover state ──────────────────────────── */
+@media (hover: hover) {
+  a[data-more-link]:hover {
+    background: #111;
+  }
+}
