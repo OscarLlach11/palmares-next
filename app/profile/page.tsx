@@ -51,6 +51,33 @@ type RaceLog = {
 }
 type Race = { slug: string; race_name: string; gradient: string; flag: string; country: string; logo_url: string | null }
 
+const ratingTooltipStyle = `
+  .rating-bar-wrap { position: relative; }
+  .rating-bar-wrap:hover .rating-bar-tip {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  .rating-bar-tip {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    font-size: 10px;
+    font-family: 'Bebas Neue', sans-serif;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    pointer-events: none;
+    z-index: 10;
+  }
+`
+
 export default function ProfilePage() {
   const router = useRouter()
   const { user, profile, loading: authLoading, refreshProfile } = useUser()
@@ -168,7 +195,6 @@ export default function ProfilePage() {
 
   const withReviews = logs.filter(l => l.review?.trim()).slice(0, 5)
 
-  // Fav race card helpers
   const favStageNum = (displayProfile as any)?.fav_race_stage_num ?? null
   const favYear = displayProfile?.fav_race_year ?? null
   const favRaceHref = favRace
@@ -182,6 +208,7 @@ export default function ProfilePage() {
 
   return (
     <>
+      <style>{ratingTooltipStyle}</style>
       <div className="profile-layout">
         {/* Column 1: stats sidebar */}
         <div className="profile-sidebar">
@@ -232,18 +259,12 @@ export default function ProfilePage() {
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 60 }}>
               {Object.entries(buckets).map(([v, cnt]) => {
                 const barH = maxBucket > 0 ? Math.max(cnt / maxBucket * 52, cnt > 0 ? 2 : 0) : 0
-                const inner = (
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                    <div style={{ width: '100%', background: 'var(--gold)', borderRadius: 2, height: barH, opacity: cnt > 0 ? 1 : 0.15 }} />
-                    <div style={{ fontSize: 8, color: 'var(--muted)' }}>{v}</div>
+                return (
+                  <div key={v} className="rating-bar-wrap" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                    <div className="rating-bar-tip">{cnt} {cnt === 1 ? 'race' : 'races'}</div>
+                    <div style={{ width: '100%', background: cnt > 0 ? 'var(--gold)' : 'var(--border)', borderRadius: 2, height: barH, opacity: cnt > 0 ? 1 : 0.25 }} />
+                    <div style={{ fontSize: 7, color: 'var(--muted)' }}>{v}</div>
                   </div>
-                )
-                return cnt > 0 ? (
-                  <Link key={v} href={`/log?rating=${v}`} style={{ flex: 1, textDecoration: 'none', cursor: 'pointer' }} title={`${cnt} race${cnt !== 1 ? 's' : ''}`}>
-                    {inner}
-                  </Link>
-                ) : (
-                  <div key={v} style={{ flex: 1 }}>{inner}</div>
                 )
               })}
             </div>
@@ -254,24 +275,24 @@ export default function ProfilePage() {
             <div className="profile-section-title" style={{ fontSize: 13, marginBottom: 12 }}>By Year</div>
             {years.map(y => {
               const yd = byYear[y]
-              const yAvg = yd.ratings.length ? (yd.ratings.reduce((a, b) => a + b, 0) / yd.ratings.length).toFixed(1) : '—'
+              const yAvg = yd.ratings.length ? (yd.ratings.reduce((s, r) => s + r, 0) / yd.ratings.length).toFixed(1) : '—'
               return (
-                <div key={y} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
-                  <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 2 }}>{y}</span>
-                  <span style={{ color: 'var(--muted)' }}>{yd.count} edition{yd.count !== 1 ? 's' : ''}</span>
-                  <span style={{ color: 'var(--gold)', fontFamily: "'Bebas Neue', sans-serif" }}>★ {yAvg}</span>
+                <div key={y} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+                  <span style={{ color: 'var(--fg)', fontFamily: "'Bebas Neue', sans-serif", letterSpacing: 1 }}>{y}</span>
+                  <span style={{ color: 'var(--muted)' }}>{yd.count} race{yd.count !== 1 ? 's' : ''}</span>
+                  <span style={{ color: 'var(--gold)' }}>{yAvg !== '—' ? `★ ${yAvg}` : '—'}</span>
                 </div>
               )
             })}
-            {years.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 12 }}>No races logged yet.</div>}
           </div>
         </div>
 
         {/* Column 2: fav riders + fav race */}
-        <div className="profile-main" style={{ borderRight: '1px solid var(--border)' }}>
+        <div className="profile-mid">
           <div className="profile-section-title">Favourite Riders</div>
           <div className="fav-riders-grid">
-            {(displayProfile?.fav_riders || [null, null, null, null]).slice(0, 4).map((rider: any, i: number) => {
+            {[0, 1, 2, 3].map(i => {
+              const rider = displayProfile?.fav_riders?.[i]
               const name = typeof rider === 'string' ? rider : rider?.name
               const imgUrl = riderImages[name] || (typeof rider === 'object' ? rider?.imageUrl : null)
               if (name) {
