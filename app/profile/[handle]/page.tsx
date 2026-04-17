@@ -25,6 +25,33 @@ function formatRiderName(name: string) {
   return name.split(' ').map(w => w === w.toUpperCase() && w.length > 1 ? w.charAt(0) + w.slice(1).toLowerCase() : w).join(' ')
 }
 
+const ratingTooltipStyle = `
+  .rating-bar-wrap { position: relative; }
+  .rating-bar-wrap:hover .rating-bar-tip {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  .rating-bar-tip {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    font-size: 10px;
+    font-family: 'Bebas Neue', sans-serif;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    pointer-events: none;
+    z-index: 10;
+  }
+`
+
 export default function UserProfilePage() {
   const params = useParams()
   const handle = params.handle as string
@@ -50,7 +77,6 @@ export default function UserProfilePage() {
   async function load() {
     setLoading(true)
 
-    // Load profile by handle
     const { data: prof } = await supabase
       .from('profiles').select('*').eq('handle', handle).maybeSingle()
 
@@ -77,7 +103,6 @@ export default function UserProfilePage() {
 
     if (prof.fav_race_slug) setFavRace(raceMap[prof.fav_race_slug] || null)
 
-    // Rider images
     const riderNames = (prof.fav_riders || [])
       .filter(Boolean)
       .map((r: any) => typeof r === 'string' ? r : r?.name)
@@ -138,261 +163,281 @@ export default function UserProfilePage() {
   const recent = logs.slice(0, 5)
   const withReviews = logs.filter((l: any) => l.review?.trim()).slice(0, 5)
 
+  // Fav race helpers
+  const favStageNum = profile?.fav_race_stage_num ?? null
+  const favYear = profile?.fav_race_year ?? null
+  const favRaceHref = favRace
+    ? (favStageNum !== null && favYear
+        ? `/races/${favRace.slug}/${favYear}/stages/${favStageNum}`
+        : favYear
+        ? `/races/${favRace.slug}/${favYear}`
+        : `/races/${favRace.slug}`)
+    : '#'
+  const favStageLabel = favStageNum === 0 ? 'Prologue' : favStageNum !== null ? `Stage ${favStageNum}` : null
+
   return (
     <>
-    <div className="profile-layout">
-      {/* Column 1: stats */}
-      <div className="profile-sidebar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
-          <div className="profile-avatar" style={{ cursor: 'default' }}>
-            {profile?.avatar_url
-              ? <img src={profile.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-              : initials}
+      <style>{ratingTooltipStyle}</style>
+      <div className="profile-layout">
+        {/* Column 1: stats */}
+        <div className="profile-sidebar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+            <div className="profile-avatar" style={{ cursor: 'default' }}>
+              {profile?.avatar_url
+                ? <img src={profile.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                : initials}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div className="profile-name">{(profile?.display_name || 'Cyclist').toUpperCase()}</div>
+              <div className="profile-handle">@{profile?.handle || 'cyclist'}</div>
+            </div>
           </div>
-          <div style={{ flex: 1 }}>
-            <div className="profile-name">{(profile?.display_name || 'Cyclist').toUpperCase()}</div>
-            <div className="profile-handle">@{profile?.handle || 'cyclist'}</div>
-          </div>
-        </div>
 
-        {/* Back + Follow */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
-          <Link href="/members" className="bs" style={{ textDecoration: 'none', fontSize: 10, padding: '6px 12px', flexShrink: 0 }}>← Back</Link>
-          {!isMe && user && (
-            <button onClick={() => toggleFollow(profile.user_id)}
-              className={`follow-btn ${isFollowing ? 'following' : 'follow'}`} style={{ flex: 1 }}>
-              {isFollowing ? 'Following' : 'Follow'}
+          {/* Back + Follow */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+            <Link href="/members" className="bs" style={{ textDecoration: 'none', fontSize: 10, padding: '6px 12px', flexShrink: 0 }}>← Back</Link>
+            {!isMe && user && (
+              <button onClick={() => toggleFollow(profile.user_id)}
+                className={`follow-btn ${isFollowing ? 'following' : 'follow'}`} style={{ flex: 1 }}>
+                {isFollowing ? 'Following' : 'Follow'}
+              </button>
+            )}
+            {isMe && (
+              <Link href="/profile" className="bs" style={{ textDecoration: 'none', fontSize: 10, flex: 1, textAlign: 'center' }}>Edit Profile →</Link>
+            )}
+          </div>
+
+          {/* Stats grid */}
+          <div className="profile-stat-grid">
+            <button className="profile-stat-cell clickable" onClick={() => setLogModal('all')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'center', padding: 0 }}>
+              <div className="profile-stat-n">{logs.length}</div>
+              <div className="profile-stat-l">Races</div>
             </button>
-          )}
-          {isMe && (
-            <Link href="/profile" className="bs" style={{ textDecoration: 'none', fontSize: 10, flex: 1, textAlign: 'center' }}>Edit Profile →</Link>
-          )}
-        </div>
-
-        {/* Stats grid */}
-        <div className="profile-stat-grid">
-          <button className="profile-stat-cell clickable" onClick={() => setLogModal('all')}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'center', padding: 0 }}>
-            <div className="profile-stat-n">{logs.length}</div>
-            <div className="profile-stat-l">Races</div>
-          </button>
-          <button className="profile-stat-cell clickable" onClick={() => setLogModal('live')}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'center', padding: 0 }}>
-            <div className="profile-stat-n">{liveCount}</div>
-            <div className="profile-stat-l">Live</div>
-          </button>
-          {[
-            [avg, 'Avg ★', null],
-            [stageCount, 'Stages', null],
-          ].map(([n, l]) => (
-            <div key={String(l)} className="profile-stat-cell">
-              <div className="profile-stat-n">{n}</div>
-              <div className="profile-stat-l">{l}</div>
-            </div>
-          ))}
-          {[
-            [followers, 'Followers', `/profile/${profile?.handle}/followers`],
-            [following, 'Following', `/profile/${profile?.handle}/following`],
-          ].map(([n, l, href]) => (
-            <Link key={String(l)} href={href as string} className="profile-stat-cell clickable" style={{ textDecoration: 'none' }}>
-              <div className="profile-stat-n">{n}</div>
-              <div className="profile-stat-l">{l}</div>
-            </Link>
-          ))}
-        </div>
-
-        {/* Rating distribution */}
-        <div style={{ marginTop: 24 }}>
-          <div className="profile-section-title" style={{ fontSize: 13, marginBottom: 12 }}>Rating Distribution</div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 60 }}>
-            {Object.entries(buckets).map(([v, cnt]) => (
-              <div key={v} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                <div style={{ width: '100%', background: 'var(--gold)', borderRadius: 2, height: maxBucket > 0 ? Math.max(cnt / maxBucket * 52, cnt > 0 ? 2 : 0) : 0 }} />
-                <div style={{ fontSize: 7, color: 'var(--muted)' }}>{v}</div>
+            <button className="profile-stat-cell clickable" onClick={() => setLogModal('live')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'center', padding: 0 }}>
+              <div className="profile-stat-n">{liveCount}</div>
+              <div className="profile-stat-l">Live</div>
+            </button>
+            {[
+              [avg, 'Avg ★'],
+              [stageCount, 'Stages'],
+            ].map(([n, l]) => (
+              <div key={String(l)} className="profile-stat-cell">
+                <div className="profile-stat-n">{n}</div>
+                <div className="profile-stat-l">{l}</div>
               </div>
             ))}
-          </div>
-        </div>
-
-        {/* By year */}
-        <div style={{ marginTop: 24 }}>
-          <div className="profile-section-title" style={{ fontSize: 13, marginBottom: 12 }}>By Year</div>
-          {years.map(y => {
-            const yd = byYear[y]
-            const yAvg = yd.ratings.length ? (yd.ratings.reduce((a, b) => a + b, 0) / yd.ratings.length).toFixed(1) : '—'
-            return (
-              <div key={y} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 2 }}>{y}</span>
-                <span style={{ color: 'var(--muted)' }}>{yd.count} edition{yd.count !== 1 ? 's' : ''}</span>
-                <span style={{ color: 'var(--gold)', fontFamily: "'Bebas Neue', sans-serif" }}>★ {yAvg}</span>
-              </div>
-            )
-          })}
-          {years.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 12 }}>No races logged yet.</div>}
-        </div>
-      </div>
-
-      {/* Column 2: fav riders + fav race */}
-      <div className="profile-main" style={{ borderRight: '1px solid var(--border)' }}>
-        <div className="profile-section-title">Favourite Riders</div>
-        <div className="fav-riders-grid">
-          {(profile?.fav_riders || [null, null, null, null]).slice(0, 4).map((rider: any, i: number) => {
-            const name = typeof rider === 'string' ? rider : rider?.name
-            const imgUrl = riderImages[name] || (typeof rider === 'object' ? rider?.imageUrl : null)
-            if (name) {
-              const col = riderColor(name)
-              const ini = riderInitials(name)
-              return (
-                <Link key={i} href={`/riders/${encodeURIComponent(name)}`} className="fav-rider-slot filled" style={{ position: 'relative', textDecoration: 'none' }}>
-                  {imgUrl
-                    ? <img src={imgUrl} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
-                    : <div style={{ width: '100%', height: '100%', background: col, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: '#fff' }}>{ini}</div>}
-                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', padding: '4px 5px', fontSize: 8, letterSpacing: 0.5, textTransform: 'uppercase', lineHeight: 1.2, color: '#fff' }}>
-                    {formatRiderName(name)}
-                  </div>
-                </Link>
-              )
-            }
-            return <div key={i} className="fav-rider-slot" style={{ background: 'var(--card-bg)', border: '1px dashed var(--border)' }} />
-          })}
-        </div>
-
-        <div className="profile-section-title" style={{ marginTop: 28 }}>Favourite Race</div>
-        {favRace ? (
-          <Link href={`/races/${favRace.slug}${profile?.fav_race_year ? `/${profile.fav_race_year}` : ''}`} className="fav-race-card" style={{ textDecoration: 'none' }}>
-            <div className="fav-race-swatch" style={{ background: favRace.gradient }}>
-              {favRace.logo_url && <img src={favRace.logo_url} alt={favRace.race_name} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 6 }} />}
-            </div>
-            <div className="fav-race-info">
-              <div className="fav-race-name">{favRace.race_name}</div>
-              {profile?.fav_race_year && <div className="fav-race-year">{profile.fav_race_year} edition</div>}
-              <div className="fav-race-label">★ All-time favourite</div>
-            </div>
-          </Link>
-        ) : (
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>No favourite race set.</div>
-        )}
-      </div>
-
-      {/* Column 3: countries, activity, reviews */}
-      <div className="profile-main">
-        <div className="profile-section-title">Countries Watched</div>
-        {sortedCountries.length > 0 ? (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {sortedCountries.map(([country, cnt]) => (
-              <div key={country} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--card-bg)', border: '1px solid var(--border)', padding: '5px 10px', fontSize: 11, letterSpacing: 1 }}>
-                <span>{country}</span>
-                <span style={{ color: 'var(--muted)', fontSize: 10 }}>{cnt}</span>
-              </div>
+            {[
+              [followers, 'Followers', `/profile/${profile?.handle}/followers`],
+              [following, 'Following', `/profile/${profile?.handle}/following`],
+            ].map(([n, l, href]) => (
+              <Link key={String(l)} href={href as string} className="profile-stat-cell clickable" style={{ textDecoration: 'none' }}>
+                <div className="profile-stat-n">{n}</div>
+                <div className="profile-stat-l">{l}</div>
+              </Link>
             ))}
           </div>
-        ) : <div style={{ color: 'var(--muted)', fontSize: 12 }}>No logged races yet.</div>}
 
-        <div className="profile-section-title" style={{ marginTop: 28 }}>Recent Activity</div>
-        {recent.length > 0 ? recent.map((l: any) => {
-          const r = races[l.slug]
-          return (
-            <Link key={l.id} href={`/races/${l.slug}/${l.year}`} style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--border)', textDecoration: 'none' }}>
-              <div style={{ width: 40, height: 40, flexShrink: 0, background: r?.gradient || 'var(--border)', borderRadius: 2 }} />
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg)' }}>{r?.race_name || l.slug} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>{l.year}</span></div>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                  {[l.date_watched ? fmtDate(l.date_watched) : '', l.watched_live ? '🔴 Live' : '', l.rating ? `★ ${l.rating}` : ''].filter(Boolean).join(' · ')}
-                </div>
-              </div>
-            </Link>
-          )
-        }) : <div style={{ color: 'var(--muted)', fontSize: 12 }}>No logged races yet.</div>}
-
-        <div className="profile-section-title" style={{ marginTop: 28 }}>Recent Reviews</div>
-        {withReviews.length > 0 ? withReviews.map((l: any) => {
-          const r = races[l.slug]
-          return (
-            <Link key={l.id} href={`/review/${handle}/${l.slug}/${l.year}`} style={{ display: 'block', padding: '12px 0', borderBottom: '1px solid var(--border)', textDecoration: 'none' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gold)', marginBottom: 4 }}>
-                {r?.race_name || l.slug} {l.year}{l.rating ? ` · ★ ${l.rating}` : ''}
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6, fontStyle: 'italic' }}>
-                "{(l.review || '').slice(0, 220)}{(l.review || '').length > 220 ? '…' : ''}"
-              </div>
-            </Link>
-          )
-        }) : <div style={{ color: 'var(--muted)', fontSize: 12 }}>No reviews yet.</div>}
-      </div>
-    </div>
-
-    {/* Log modal */}
-    {logModal && (() => {
-      const modalLogs = logModal === 'live' ? logs.filter((l: any) => l.watched_live) : logs
-      const title = logModal === 'live'
-        ? `${profile?.display_name || handle}'s Live Races`
-        : `${profile?.display_name || handle}'s Race Log`
-      return (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
-          onClick={() => setLogModal(null)}
-        >
-          <div
-            style={{ background: 'var(--bg)', border: '1px solid var(--border)', width: '100%', maxWidth: 520, maxHeight: '80vh', display: 'flex', flexDirection: 'column', borderRadius: 2 }}
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 2 }}>{title}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{modalLogs.length} race{modalLogs.length !== 1 ? 's' : ''}</span>
-                <button onClick={() => setLogModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0 }}>✕</button>
-              </div>
-            </div>
-            {/* Toggle */}
-            <div style={{ display: 'flex', gap: 8, padding: '10px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-              <button onClick={() => setLogModal('all')}
-                style={{ fontSize: 10, padding: '4px 12px', cursor: 'pointer', background: logModal === 'all' ? 'var(--gold)' : 'var(--card-bg)', color: logModal === 'all' ? '#000' : 'var(--muted)', border: '1px solid var(--border)', letterSpacing: 1 }}>
-                ALL
-              </button>
-              <button onClick={() => setLogModal('live')}
-                style={{ fontSize: 10, padding: '4px 12px', cursor: 'pointer', background: logModal === 'live' ? 'var(--gold)' : 'var(--card-bg)', color: logModal === 'live' ? '#000' : 'var(--muted)', border: '1px solid var(--border)', letterSpacing: 1 }}>
-                🔴 LIVE ONLY
-              </button>
-            </div>
-            {/* List */}
-            <div style={{ overflowY: 'auto', flex: 1 }}>
-              {modalLogs.length === 0 ? (
-                <div style={{ padding: 24, color: 'var(--muted)', fontSize: 12, textAlign: 'center' }}>No races logged yet.</div>
-              ) : modalLogs.map((l: any) => {
-                const r = races[l.slug]
+          {/* Rating distribution */}
+          <div style={{ marginTop: 24 }}>
+            <div className="profile-section-title" style={{ fontSize: 13, marginBottom: 12 }}>Rating Distribution</div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 60 }}>
+              {Object.entries(buckets).map(([v, cnt]) => {
+                const barH = maxBucket > 0 ? Math.max(cnt / maxBucket * 52, cnt > 0 ? 2 : 0) : 0
                 return (
-                  <Link
-                    key={l.id}
-                    href={`/races/${l.slug}/${l.year}`}
-                    onClick={() => setLogModal(null)}
-                    style={{ display: 'flex', gap: 12, padding: '10px 18px', borderBottom: '1px solid var(--border)', textDecoration: 'none', alignItems: 'center' }}
-                  >
-                    <div style={{ width: 36, height: 36, flexShrink: 0, background: r?.gradient || 'var(--border)', borderRadius: 2 }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {r?.race_name || l.slug}
-                        <span style={{ fontWeight: 400, color: 'var(--muted)', marginLeft: 6 }}>{l.year}</span>
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                        {[
-                          l.watched_live ? '🔴 Live' : '',
-                          l.rating ? `★ ${l.rating}` : '',
-                          l.date_watched ? fmtDate(l.date_watched) : '',
-                        ].filter(Boolean).join(' · ')}
-                      </div>
-                    </div>
-                    {l.review?.trim() && (
-                      <div style={{ fontSize: 10, color: 'var(--gold)', flexShrink: 0 }}>✍</div>
-                    )}
-                  </Link>
+                  <div key={v} className="rating-bar-wrap" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                    <div className="rating-bar-tip">{cnt} {cnt === 1 ? 'race' : 'races'}</div>
+                    <div style={{ width: '100%', background: cnt > 0 ? 'var(--gold)' : 'var(--border)', borderRadius: 2, height: barH, opacity: cnt > 0 ? 1 : 0.25 }} />
+                    <div style={{ fontSize: 7, color: 'var(--muted)' }}>{v}</div>
+                  </div>
                 )
               })}
             </div>
           </div>
+
+          {/* By year */}
+          <div style={{ marginTop: 24 }}>
+            <div className="profile-section-title" style={{ fontSize: 13, marginBottom: 12 }}>By Year</div>
+            {years.map(y => {
+              const yd = byYear[y]
+              const yAvg = yd.ratings.length ? (yd.ratings.reduce((s: number, r: number) => s + r, 0) / yd.ratings.length).toFixed(1) : '—'
+              return (
+                <div key={y} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+                  <span style={{ color: 'var(--fg)', fontFamily: "'Bebas Neue', sans-serif", letterSpacing: 1 }}>{y}</span>
+                  <span style={{ color: 'var(--muted)' }}>{yd.count} race{yd.count !== 1 ? 's' : ''}</span>
+                  <span style={{ color: 'var(--gold)' }}>{yAvg !== '—' ? `★ ${yAvg}` : '—'}</span>
+                </div>
+              )
+            })}
+          </div>
         </div>
-      )
-    })()}
+
+        {/* Column 2: fav riders + fav race */}
+        <div className="profile-mid">
+          <div className="profile-section-title">Favourite Riders</div>
+          <div className="fav-riders-grid">
+            {[0, 1, 2, 3].map(i => {
+              const rider = profile?.fav_riders?.[i]
+              const name = typeof rider === 'string' ? rider : rider?.name
+              const imgUrl = riderImages[name] || (typeof rider === 'object' ? rider?.imageUrl : null)
+              if (name) {
+                const col = riderColor(name)
+                const ini = riderInitials(name)
+                return (
+                  <Link key={i} href={`/riders/${encodeURIComponent(name)}`} className="fav-rider-slot filled" style={{ position: 'relative', textDecoration: 'none' }}>
+                    {imgUrl
+                      ? <img src={imgUrl} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
+                      : <div style={{ width: '100%', height: '100%', background: col, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: '#fff' }}>{ini}</div>}
+                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', padding: '4px 5px', fontSize: 8, letterSpacing: 0.5, textTransform: 'uppercase', lineHeight: 1.2, color: '#fff' }}>
+                      {formatRiderName(name)}
+                    </div>
+                  </Link>
+                )
+              }
+              return <div key={i} className="fav-rider-slot" style={{ background: 'var(--card-bg)', border: '1px dashed var(--border)' }} />
+            })}
+          </div>
+
+          <div className="profile-section-title" style={{ marginTop: 28 }}>Favourite Race</div>
+          {favRace ? (
+            <Link href={favRaceHref} className="fav-race-card" style={{ textDecoration: 'none' }}>
+              <div className="fav-race-swatch" style={{ background: favRace.gradient }}>
+                {favRace.logo_url && <img src={favRace.logo_url} alt={favRace.race_name} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 6 }} />}
+              </div>
+              <div className="fav-race-info">
+                <div className="fav-race-name">{favRace.race_name}</div>
+                {favYear && (
+                  <div className="fav-race-year">
+                    {favYear} edition{favStageLabel ? ` · ${favStageLabel}` : ''}
+                  </div>
+                )}
+                <div className="fav-race-label">★ All-time favourite</div>
+              </div>
+            </Link>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>No favourite race set.</div>
+          )}
+        </div>
+
+        {/* Column 3: countries, activity, reviews */}
+        <div className="profile-main">
+          <div className="profile-section-title">Countries Watched</div>
+          {sortedCountries.length > 0 ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {sortedCountries.map(([country, cnt]) => (
+                <div key={country} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--card-bg)', border: '1px solid var(--border)', padding: '5px 10px', fontSize: 11, letterSpacing: 1 }}>
+                  <span style={{ color: 'var(--fg)' }}>{country}</span>
+                  <span style={{ color: 'var(--muted)', fontSize: 10 }}>{cnt}</span>
+                </div>
+              ))}
+            </div>
+          ) : <div style={{ color: 'var(--muted)', fontSize: 12 }}>No logged races yet.</div>}
+
+          <div className="profile-section-title" style={{ marginTop: 28 }}>Recent Activity</div>
+          {recent.length > 0 ? recent.map((l: any) => {
+            const r = races[l.slug]
+            return (
+              <Link key={l.id} href={`/races/${l.slug}/${l.year}`} style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--border)', textDecoration: 'none' }}>
+                <div style={{ width: 40, height: 40, flexShrink: 0, background: r?.gradient || 'var(--border)', borderRadius: 2 }} />
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg)' }}>{r?.race_name || l.slug} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>{l.year}</span></div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                    {[l.date_watched ? fmtDate(l.date_watched) : '', l.watched_live ? '🔴 Live' : '', l.rating ? `★ ${l.rating}` : ''].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+              </Link>
+            )
+          }) : <div style={{ color: 'var(--muted)', fontSize: 12 }}>No logged races yet.</div>}
+
+          <div className="profile-section-title" style={{ marginTop: 28 }}>Recent Reviews</div>
+          {withReviews.length > 0 ? withReviews.map((l: any) => {
+            const r = races[l.slug]
+            return (
+              <Link key={l.id} href={`/review/${handle}/${l.slug}/${l.year}`} style={{ display: 'block', padding: '12px 0', borderBottom: '1px solid var(--border)', textDecoration: 'none' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gold)', marginBottom: 4 }}>
+                  {r?.race_name || l.slug} {l.year}{l.rating ? ` · ★ ${l.rating}` : ''}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6, fontStyle: 'italic' }}>
+                  "{(l.review || '').slice(0, 220)}{(l.review || '').length > 220 ? '…' : ''}"
+                </div>
+              </Link>
+            )
+          }) : <div style={{ color: 'var(--muted)', fontSize: 12 }}>No reviews yet.</div>}
+        </div>
+      </div>
+
+      {/* Log modal */}
+      {logModal && (() => {
+        const modalLogs = logModal === 'live' ? logs.filter((l: any) => l.watched_live) : logs
+        const title = logModal === 'live'
+          ? `${profile?.display_name || handle}'s Live Races`
+          : `${profile?.display_name || handle}'s Race Log`
+        return (
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+            onClick={() => setLogModal(null)}
+          >
+            <div
+              style={{ background: 'var(--bg)', border: '1px solid var(--border)', width: '100%', maxWidth: 520, maxHeight: '80vh', display: 'flex', flexDirection: 'column', borderRadius: 2 }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 2 }}>{title}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>{modalLogs.length} race{modalLogs.length !== 1 ? 's' : ''}</span>
+                  <button onClick={() => setLogModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0 }}>✕</button>
+                </div>
+              </div>
+              {/* Toggle */}
+              <div style={{ display: 'flex', gap: 8, padding: '10px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+                <button onClick={() => setLogModal('all')}
+                  style={{ fontSize: 10, padding: '4px 12px', cursor: 'pointer', background: logModal === 'all' ? 'var(--gold)' : 'var(--card-bg)', color: logModal === 'all' ? '#000' : 'var(--muted)', border: '1px solid var(--border)', letterSpacing: 1 }}>
+                  ALL
+                </button>
+                <button onClick={() => setLogModal('live')}
+                  style={{ fontSize: 10, padding: '4px 12px', cursor: 'pointer', background: logModal === 'live' ? 'var(--gold)' : 'var(--card-bg)', color: logModal === 'live' ? '#000' : 'var(--muted)', border: '1px solid var(--border)', letterSpacing: 1 }}>
+                  🔴 LIVE ONLY
+                </button>
+              </div>
+              {/* List */}
+              <div style={{ overflowY: 'auto', flex: 1 }}>
+                {modalLogs.length === 0 ? (
+                  <div style={{ padding: 24, color: 'var(--muted)', fontSize: 12, textAlign: 'center' }}>No races found.</div>
+                ) : modalLogs.map((l: any) => {
+                  const r = races[l.slug]
+                  return (
+                    <Link
+                      key={l.id}
+                      href={`/races/${l.slug}/${l.year}`}
+                      onClick={() => setLogModal(null)}
+                      style={{ display: 'flex', gap: 12, padding: '10px 18px', borderBottom: '1px solid var(--border)', textDecoration: 'none', alignItems: 'center' }}
+                    >
+                      <div style={{ width: 36, height: 36, flexShrink: 0, background: r?.gradient || 'var(--border)', borderRadius: 2 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {r?.race_name || l.slug} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>{l.year}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                          {[
+                            l.date_watched ? fmtDate(l.date_watched) : '',
+                            l.watched_live ? '🔴 Live' : '',
+                            l.rating ? `★ ${l.rating}` : '',
+                          ].filter(Boolean).join(' · ')}
+                        </div>
+                      </div>
+                      {l.review?.trim() && (
+                        <span style={{ fontSize: 14, color: 'var(--muted)', flexShrink: 0 }} title="Has review">✍</span>
+                      )}
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </>
   )
 }
